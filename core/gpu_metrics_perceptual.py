@@ -1,6 +1,6 @@
 """Perceptual uniformity & application metrics — ported from scripts/benchmark.
 
-12 new measure_* functions, all torch-based, following gpu_metrics_advanced.py pattern.
+13 measure_* functions, all torch-based, following gpu_metrics_advanced.py pattern.
 """
 
 import math
@@ -639,7 +639,102 @@ def measure_eased_animation(space, device):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  32. Hue Angle Agreement with CIE Lab
+#  32. Gradient Chroma Preservation (Muddy Midpoint Detection)
+# ═══════════════════════════════════════════════════════════════
+
+def measure_chroma_preservation(space, device):
+    """Detect muddy/gray midpoints in gradients between vivid colors.
+
+    For each pair of saturated colors, interpolate in the space and measure
+    the minimum chroma (in CIE Lab C*) along the path. A "muddy" gradient
+    has a chroma dip in the middle — the colors desaturate through gray/brown
+    before reaching the other end.
+
+    Score: mean of (min_chroma / endpoint_chroma) across pairs.
+    Higher is better (1.0 = no chroma loss, 0.0 = goes through gray).
+
+    This is the metric OKLab was famous for fixing vs CIE Lab.
+    """
+    ms = _to(_M_SRGB, device)
+    msi = _to(_M_SRGB_INV, device)
+    d65 = _to(_D65, device)
+
+    # Pairs of vivid colors where muddy midpoints are most visible
+    vivid_pairs = [
+        ("Red-Green", [1, 0, 0], [0, 1, 0]),
+        ("Red-Blue", [1, 0, 0], [0, 0, 1]),
+        ("Green-Blue", [0, 1, 0], [0, 0, 1]),
+        ("Red-Cyan", [1, 0, 0], [0, 1, 1]),
+        ("Green-Magenta", [0, 1, 0], [1, 0, 1]),
+        ("Blue-Yellow", [0, 0, 1], [1, 1, 0]),
+        ("Orange-Teal", [1, 0.5, 0], [0, 0.7, 0.7]),
+        ("Pink-Mint", [1, 0.4, 0.6], [0.4, 1, 0.6]),
+        ("Red-Yellow", [1, 0, 0], [1, 1, 0]),
+        ("Yellow-Green", [1, 1, 0], [0, 1, 0]),
+        ("Green-Cyan", [0, 1, 0], [0, 1, 1]),
+        ("Cyan-Blue", [0, 1, 1], [0, 0, 1]),
+        ("Blue-Magenta", [0, 0, 1], [1, 0, 1]),
+        ("Magenta-Red", [1, 0, 1], [1, 0, 0]),
+        ("Warm-Cool", [1, 0.6, 0.2], [0.2, 0.4, 1]),
+        ("Coral-Teal", [1, 0.5, 0.5], [0.5, 1, 1]),
+        ("Purple-Gold", [0.6, 0.2, 0.8], [0.9, 0.8, 0.2]),
+        ("DarkRed-DarkBlue", [0.6, 0, 0], [0, 0, 0.6]),
+    ]
+
+    n_steps = 32
+    results = {}
+    ratios = []
+
+    for name, rgb1, rgb2 in vivid_pairs:
+        xyz1 = ms @ _srgb_to_linear(torch.tensor(rgb1, dtype=torch.float64, device=device))
+        xyz2 = ms @ _srgb_to_linear(torch.tensor(rgb2, dtype=torch.float64, device=device))
+
+        lab1 = space.forward(xyz1.unsqueeze(0))
+        lab2 = space.forward(xyz2.unsqueeze(0))
+
+        t = torch.linspace(0, 1, n_steps, dtype=torch.float64, device=device).unsqueeze(1)
+        lab_interp = lab1 + t * (lab2 - lab1)  # (32, 3)
+
+        # Convert to XYZ, clip to sRGB, measure CIE Lab chroma
+        xyz_interp = space.inverse(lab_interp)
+        rgb_interp = _linear_to_srgb((xyz_interp @ msi.T).clamp(0, 1)).clamp(0, 1)
+        rgb8 = (rgb_interp * 255).round() / 255.0
+        xyz_q = _srgb_to_linear(rgb8) @ ms.T
+        cielab = _xyz_to_cielab(xyz_q, d65)
+        C_star = (cielab[:, 1] ** 2 + cielab[:, 2] ** 2).sqrt()
+
+        # Endpoint chroma (average of start and end)
+        C_endpoints = 0.5 * (C_star[0] + C_star[-1])
+
+        # Minimum chroma along path (excluding first and last)
+        C_mid = C_star[1:-1]
+        C_min = C_mid.min().item()
+
+        # Ratio: how much chroma is preserved (1.0 = no loss)
+        if C_endpoints > 1.0:
+            ratio = C_min / C_endpoints.item()
+        else:
+            ratio = 1.0  # achromatic pair, skip
+
+        ratios.append(ratio)
+        results[name] = {
+            "min_chroma": C_min,
+            "endpoint_chroma": C_endpoints.item(),
+            "preservation_ratio": ratio,
+        }
+
+    mean_ratio = sum(ratios) / len(ratios) if ratios else 0
+    # Also count "muddy" gradients (ratio < 0.5 = lost >50% chroma)
+    n_muddy = sum(1 for r in ratios if r < 0.5)
+
+    results["mean_preservation"] = mean_ratio
+    results["n_muddy"] = n_muddy
+    results["n_pairs"] = len(vivid_pairs)
+    return results
+
+
+# ═══════════════════════════════════════════════════════════════
+#  33. Hue Angle Agreement with CIE Lab
 # ═══════════════════════════════════════════════════════════════
 
 def measure_hue_agreement(space, device):

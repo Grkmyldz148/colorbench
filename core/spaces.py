@@ -439,3 +439,145 @@ class CustomSpace(ColorSpace):
 
     def inverse(self, lab):
         return self._inv(lab)
+
+
+class HueDep(ColorSpace):
+    """Hue-dependent M2: fixed L row + Fourier-rotated a,b rows + L_corr."""
+
+    def __init__(self, json_path, device, label=None):
+        import json as _json, math
+        with open(json_path) as f:
+            d = _json.load(f)
+        self.name = label or f"HueDep({os.path.basename(json_path)})"
+        dev = device
+        self._M1 = torch.tensor(d["M1"], dtype=torch.float64, device=dev)
+        self._M1_inv = torch.linalg.inv(self._M1)
+        # M2 rows
+        m2f = d["M2_full"]
+        self._M2_L = torch.tensor(m2f[0], dtype=torch.float64, device=dev)
+        self._M2_a = torch.tensor(m2f[1], dtype=torch.float64, device=dev)
+        self._M2_b = torch.tensor(m2f[2], dtype=torch.float64, device=dev)
+        # Full M2 and inverse for round-trip
+        self._M2 = torch.tensor(m2f, dtype=torch.float64, device=dev)
+        self._M2_inv = torch.linalg.inv(self._M2)
+        # Fourier rotation
+        rf = d["rotation_fourier"]
+        self._rc1 = rf["c1"]
+        self._rs1 = rf["s1"]
+        self._rc2 = rf["c2"]
+        self._rs2 = rf["s2"]
+        # L_corr
+        lc = d.get("L_corr", [0, 0, 0])
+        self._lc = torch.tensor(lc, dtype=torch.float64, device=dev)
+        self._has_lc = any(abs(x) > 1e-10 for x in lc)
+
+    def _rotation_angle(self, h):
+        return (self._rc1 * torch.cos(h) + self._rs1 * torch.sin(h) +
+                self._rc2 * torch.cos(2 * h) + self._rs2 * torch.sin(2 * h))
+
+    def forward(self, xyz):
+        lms = (xyz @ self._M1.T).clamp(min=0)
+        lms_c = torch.sign(lms) * lms.abs().pow(1.0 / 3.0)
+        L = lms_c @ self._M2_L
+        a_raw = lms_c @ self._M2_a
+        b_raw = lms_c @ self._M2_b
+        # Hue-dependent rotation
+        h = torch.atan2(b_raw, a_raw)
+        theta = self._rotation_angle(h)
+        cos_t = torch.cos(theta)
+        sin_t = torch.sin(theta)
+        a = a_raw * cos_t - b_raw * sin_t
+        b = a_raw * sin_t + b_raw * cos_t
+        lab = torch.stack([L, a, b], dim=-1)
+        # L_corr
+        if self._has_lc:
+            Lv = lab[:, 0:1]
+            c1, c2, c3 = self._lc[0], self._lc[1], self._lc[2]
+            t = Lv * (1.0 - Lv)
+            L_new = Lv + c1 * t + c2 * t * (2.0 * Lv - 1.0) + c3 * Lv ** 2 * (1.0 - Lv) ** 2
+            lab = torch.cat([L_new, lab[:, 1:2], lab[:, 2:3]], dim=1)
+        return lab
+
+    def inverse(self, lab):
+        lab = lab.clone()
+        # Undo L_corr
+        if self._has_lc:
+            L1 = lab[:, 0:1]
+            L = L1.clone()
+            c1, c2, c3 = self._lc[0], self._lc[1], self._lc[2]
+            for _ in range(15):
+                t = L * (1.0 - L)
+                f = L + c1 * t + c2 * t * (2 * L - 1) + c3 * L ** 2 * (1 - L) ** 2 - L1
+                df = 1.0 + c1 * (1 - 2 * L) + c2 * (6 * L ** 2 - 6 * L + 1) + c3 * 2 * L * (1 - L) * (1 - 2 * L)
+                L = L - f / df.clamp(min=1e-12)
+            lab = torch.cat([L, lab[:, 1:2], lab[:, 2:3]], dim=1)
+        # Undo hue rotation: solve h_raw + theta(h_raw) = h_out
+        a_out, b_out = lab[:, 1], lab[:, 2]
+        h_out = torch.atan2(b_out, a_out)
+        C = (a_out ** 2 + b_out ** 2).sqrt()
+        h_raw = h_out.clone()
+        for _ in range(10):
+            theta = self._rotation_angle(h_raw)
+            h_raw = h_out - theta
+        theta_final = self._rotation_angle(h_raw)
+        cos_t = torch.cos(theta_final)
+        sin_t = torch.sin(theta_final)
+        # Reverse rotation: [a_raw, b_raw] = R(-theta) @ [a, b]
+        a_raw = a_out * cos_t + b_out * sin_t
+        b_raw = -a_out * sin_t + b_out * cos_t
+        raw = torch.stack([lab[:, 0], a_raw, b_raw], dim=-1)
+        lms_c = raw @ self._M2_inv.T
+        lms = torch.sign(lms_c) * lms_c.abs().pow(3.0)
+        return lms @ self._M1_inv.T
+
+
+class TwoStage(ColorSpace):
+    """Two-stage pipeline: XYZ -> M1a -> cbrt -> M1b -> cbrt -> M2 -> L_corr -> Lab."""
+
+    def __init__(self, json_path, device, label=None):
+        import json as _json
+        with open(json_path) as f:
+            d = _json.load(f)
+        self.name = label or f"TwoStage({os.path.basename(json_path)})"
+        dev = device
+        self._M1a = torch.tensor(d["M1a"], dtype=torch.float64, device=dev)
+        self._M1b = torch.tensor(d["M1b"], dtype=torch.float64, device=dev)
+        self._M2 = torch.tensor(d["M2"], dtype=torch.float64, device=dev)
+        self._M1a_inv = torch.linalg.inv(self._M1a)
+        self._M1b_inv = torch.linalg.inv(self._M1b)
+        self._M2_inv = torch.linalg.inv(self._M2)
+        lc = d.get("L_corr", [0, 0, 0])
+        self._lc = torch.tensor(lc, dtype=torch.float64, device=dev)
+        self._has_lc = any(abs(x) > 1e-10 for x in lc)
+
+    def forward(self, xyz):
+        lms1 = (xyz @ self._M1a.T).clamp(min=0)
+        inter = torch.sign(lms1) * lms1.abs().pow(1.0 / 3.0)
+        lms2 = (inter @ self._M1b.T).clamp(min=0)
+        opp = torch.sign(lms2) * lms2.abs().pow(1.0 / 3.0)
+        lab = opp @ self._M2.T
+        if self._has_lc:
+            L = lab[:, 0:1]
+            c1, c2, c3 = self._lc[0], self._lc[1], self._lc[2]
+            t = L * (1.0 - L)
+            lab = torch.cat([L + c1 * t + c2 * t * (2.0 * L - 1.0) + c3 * L ** 2 * (1.0 - L) ** 2,
+                             lab[:, 1:2], lab[:, 2:3]], dim=1)
+        return lab
+
+    def inverse(self, lab):
+        lab = lab.clone()
+        if self._has_lc:
+            L1 = lab[:, 0:1]
+            L = L1.clone()
+            c1, c2, c3 = self._lc[0], self._lc[1], self._lc[2]
+            for _ in range(15):
+                t = L * (1.0 - L)
+                f = L + c1 * t + c2 * t * (2.0 * L - 1.0) + c3 * L ** 2 * (1.0 - L) ** 2 - L1
+                df = 1.0 + c1 * (1.0 - 2.0 * L) + c2 * (6.0 * L ** 2 - 6.0 * L + 1.0) + c3 * 2.0 * L * (1.0 - L) * (1.0 - 2.0 * L)
+                L = L - f / df.clamp(min=1e-12)
+            lab = torch.cat([L, lab[:, 1:2], lab[:, 2:3]], dim=1)
+        opp = lab @ self._M2_inv.T
+        lms2 = torch.sign(opp) * opp.abs().pow(3.0)
+        inter = lms2 @ self._M1b_inv.T
+        lms1 = torch.sign(inter) * inter.abs().pow(3.0)
+        return lms1 @ self._M1a_inv.T

@@ -155,6 +155,10 @@ METRIC_DEFS = [
               "Photo gamut map fidelity", "Application", "deg", True, ".2f"),
     MetricDef("eased_animation", "mean_cv",
               "Eased animation CV", "Application", "%", True, ".1f"),
+    MetricDef("chroma_preservation", "mean_preservation",
+              "Chroma preservation (no mud)", "Application", "", False, ".3f"),
+    MetricDef("chroma_preservation", "n_muddy",
+              "Muddy gradients (C drop >50%)", "Application", "", True, "d"),
 
     # ── Computed but previously missing from comparison ──
     MetricDef("hue", "primary_L_range",
