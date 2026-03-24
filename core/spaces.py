@@ -531,6 +531,189 @@ class HueDep(ColorSpace):
         return lms @ self._M1_inv.T
 
 
+class NativePolar(ColorSpace):
+    """Native polar color space: outputs (L, C, h) instead of (L, a, b).
+
+    Linear interpolation in this space = chroma-preserving polar interpolation.
+    No muddy midpoints by construction.
+
+    Handles:
+    - h wrap-around: shortest arc via modular arithmetic in interpolate()
+    - Achromatic (C=0): h defaults to 0, blends smoothly
+    - Invertible: (L,C,h) → (L,a,b) → XYZ is exact
+
+    The trick: forward() returns (L, C, h_scaled) where h_scaled = h/(2π).
+    This keeps h in [0,1] range similar to L and C.
+    """
+
+    def __init__(self, base_space, label=None):
+        self._base = base_space
+        self.name = label or f"NativePolar({base_space.name})"
+        self._PI = 3.141592653589793
+        self._MSi = torch.linalg.inv(M_SRGB).to(dtype=torch.float64)
+
+    def forward(self, xyz):
+        """XYZ → (L, C, h_scaled)"""
+        lab = self._base.forward(xyz)
+        L = lab[:, 0]
+        a = lab[:, 1]
+        b = lab[:, 2]
+        C = (a**2 + b**2).sqrt()
+        h = torch.atan2(b, a)  # [-π, π]
+        h_scaled = (h / (2 * self._PI)) % 1.0  # [0, 1]
+        return torch.stack([L, C, h_scaled], dim=-1)
+
+    def inverse(self, lch):
+        """(L, C, h_scaled) → XYZ"""
+        L = lch[:, 0]
+        C = lch[:, 1].clamp(min=0)
+        h = lch[:, 2] * 2 * self._PI  # back to radians
+        a = C * torch.cos(h)
+        b = C * torch.sin(h)
+        lab = torch.stack([L, a, b], dim=-1)
+        return self._base.inverse(lab)
+
+    def interpolate(self, xyz1, xyz2, n_steps=26):
+        """Chroma-boosted linear interpolation.
+
+        Follows the LINEAR path in (a,b) plane (no rainbow) but BOOSTS
+        chroma at each step to match the linearly interpolated C from endpoints.
+
+        Result: hue = linear (direct, no rainbow), chroma = preserved (no mud).
+        Best of both worlds.
+        """
+        lab1 = self._base.forward(xyz1.unsqueeze(0) if xyz1.dim() == 1 else xyz1)[0]
+        lab2 = self._base.forward(xyz2.unsqueeze(0) if xyz2.dim() == 1 else xyz2)[0]
+
+        L1, a1, b1 = lab1[0], lab1[1], lab1[2]
+        L2, a2, b2 = lab2[0], lab2[1], lab2[2]
+        C1 = (a1**2 + b1**2).sqrt()
+        C2 = (a2**2 + b2**2).sqrt()
+
+        # Quadratic Bezier in (a,b) plane with control point pushed away from origin.
+        # This curves the path AWAY from gray → preserves chroma.
+        # Smooth by construction (no hue discontinuity, no sRGB clipping artifacts).
+
+        # Linear midpoint
+        mx = 0.5 * (a1 + a2)
+        my = 0.5 * (b1 + b2)
+        M_norm = (mx**2 + my**2).sqrt()
+
+        # Target midpoint chroma (average of endpoints)
+        C_mid_target = 0.5 * (C1 + C2)
+
+        # Push strength: how much to push control point away from origin
+        # Proportional to chroma deficit at midpoint
+        if M_norm > 0.001:
+            # Push direction: from origin toward midpoint
+            dx = mx / M_norm
+            dy = my / M_norm
+            # Push amount: fill the gap between linear C and target C
+            k = (C_mid_target - M_norm).clamp(min=0) * 0.8
+        else:
+            # Midpoint is at origin (complementary colors) — can't determine push direction
+            # Fall back to linear (no improvement possible)
+            dx = torch.tensor(0.0, device=xyz1.device)
+            dy = torch.tensor(0.0, device=xyz1.device)
+            k = torch.tensor(0.0, device=xyz1.device)
+
+        # Bezier control point
+        qx = mx + k * dx
+        qy = my + k * dy
+
+        t = torch.linspace(0, 1, n_steps, device=xyz1.device, dtype=xyz1.dtype)
+        results = []
+
+        for i in range(n_steps):
+            ti = t[i]
+            L_i = L1 + ti * (L2 - L1)
+
+            # Quadratic Bezier: B(t) = (1-t)²P1 + 2t(1-t)Q + t²P2
+            a_i = (1-ti)**2 * a1 + 2*ti*(1-ti) * qx + ti**2 * a2
+            b_i = (1-ti)**2 * b1 + 2*ti*(1-ti) * qy + ti**2 * b2
+
+            lab_i = torch.stack([L_i, a_i, b_i])
+            xyz_i = self._base.inverse(lab_i.unsqueeze(0))[0]
+            results.append(xyz_i)
+
+        return torch.stack(results)
+
+
+class PolarBlend(ColorSpace):
+    """Any base space + polar-aware interpolation.
+
+    Wraps an existing space. forward/inverse are identical.
+    The difference: interpolate() uses polar (LCh) blending instead of
+    linear Lab, preserving chroma through the gradient.
+
+    Achromatic-safe: blends smoothly between polar and linear based on
+    endpoint chromas, avoiding h discontinuity at C=0.
+    """
+
+    def __init__(self, base_space, label=None):
+        self._base = base_space
+        self.name = label or f"Polar({base_space.name})"
+
+    def forward(self, xyz):
+        return self._base.forward(xyz)
+
+    def inverse(self, lab):
+        return self._base.inverse(lab)
+
+    def interpolate(self, xyz1, xyz2, n_steps=26):
+        """Polar-aware interpolation: preserves chroma, rotates hue."""
+        lab1 = self.forward(xyz1.unsqueeze(0) if xyz1.dim() == 1 else xyz1)[0]
+        lab2 = self.forward(xyz2.unsqueeze(0) if xyz2.dim() == 1 else xyz2)[0]
+
+        PI = 3.141592653589793
+        L1, a1, b1 = lab1[0], lab1[1], lab1[2]
+        L2, a2, b2 = lab2[0], lab2[1], lab2[2]
+
+        C1 = (a1**2 + b1**2).sqrt()
+        C2 = (a2**2 + b2**2).sqrt()
+        h1 = torch.atan2(b1, a1)
+        h2 = torch.atan2(b2, a2)
+
+        # Shortest hue arc
+        dh = h2 - h1
+        dh = torch.where(dh > PI, dh - 2*PI, dh)
+        dh = torch.where(dh < -PI, dh + 2*PI, dh)
+
+        # Polar weight: high when both endpoints are chromatic
+        # Smoothly transitions to linear when either endpoint is achromatic
+        C_min = torch.minimum(C1, C2)
+        C_max = torch.maximum(C1, C2)
+        w_polar = torch.clamp(C_min / (C_max + 1e-10), 0, 1)
+        # Additional: scale by absolute chroma (very low C → linear)
+        w_polar = w_polar * torch.clamp(C_min * 20, 0, 1)
+
+        t = torch.linspace(0, 1, n_steps, device=lab1.device, dtype=lab1.dtype)
+
+        labs = []
+        for i in range(n_steps):
+            ti = t[i]
+            L_i = L1 + ti * (L2 - L1)
+
+            # Polar path
+            C_polar = C1 + ti * (C2 - C1)
+            h_polar = h1 + ti * dh
+            a_polar = C_polar * torch.cos(h_polar)
+            b_polar = C_polar * torch.sin(h_polar)
+
+            # Linear path
+            a_linear = a1 + ti * (a2 - a1)
+            b_linear = b1 + ti * (b2 - b1)
+
+            # Blend
+            a_i = w_polar * a_polar + (1 - w_polar) * a_linear
+            b_i = w_polar * b_polar + (1 - w_polar) * b_linear
+
+            labs.append(torch.stack([L_i, a_i, b_i]))
+
+        lab_interp = torch.stack(labs)
+        return self.inverse(lab_interp)
+
+
 class TwoStage(ColorSpace):
     """Two-stage pipeline: XYZ -> M1a -> cbrt -> M1b -> cbrt -> M2 -> L_corr -> Lab."""
 

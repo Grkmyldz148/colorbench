@@ -639,7 +639,110 @@ def measure_eased_animation(space, device):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  32. Gradient Chroma Preservation (Muddy Midpoint Detection)
+#  32. Shade Palette Hue Consistency
+# ═══════════════════════════════════════════════════════════════
+
+def measure_shade_hue_consistency(space, device):
+    """Hue drift across 10-shade palettes (Tailwind/Material style).
+
+    For each base color, generate 10 shades (50-950) by interpolating
+    toward white (tints) and black (shades) in the space. Measure max
+    CIE Lab hue deviation from the base color's hue.
+
+    This is the #1 designer complaint: "blue palette turns purple."
+    Lower is better. 0 = perfect hue consistency across all shades.
+
+    Tests 12 hues including problematic ones (blue, cyan, red).
+    """
+    ms = _to(_M_SRGB, device)
+    msi = _to(_M_SRGB_INV, device)
+    d65 = _to(_D65, device)
+
+    # 12 base colors: primaries + problematic hues
+    base_colors = [
+        ("Red", [1.0, 0.2, 0.2]),
+        ("Orange", [1.0, 0.5, 0.0]),
+        ("Yellow", [0.9, 0.9, 0.0]),
+        ("Lime", [0.4, 0.8, 0.0]),
+        ("Green", [0.0, 0.7, 0.2]),
+        ("Teal", [0.0, 0.7, 0.7]),
+        ("Blue", [0.2, 0.4, 1.0]),
+        ("Indigo", [0.3, 0.0, 0.8]),
+        ("Purple", [0.6, 0.2, 0.8]),
+        ("Pink", [0.9, 0.3, 0.6]),
+        ("Rose", [0.9, 0.2, 0.4]),
+        ("Cyan", [0.0, 0.8, 0.9]),
+    ]
+
+    results = {}
+    max_drifts = []
+
+    for name, rgb in base_colors:
+        xyz_base = ms @ _srgb_to_linear(torch.tensor(rgb, dtype=torch.float64, device=device))
+        xyz_white = d65.clone()
+        xyz_black = torch.zeros(3, dtype=torch.float64, device=device)
+
+        # Base color CIE Lab hue
+        cielab_base = _xyz_to_cielab(xyz_base.unsqueeze(0), d65)[0]
+        C_base = (cielab_base[1]**2 + cielab_base[2]**2).sqrt()
+        h_base = torch.atan2(cielab_base[2], cielab_base[1])
+
+        if C_base < 1.0:
+            results[name] = {"max_drift_deg": 0.0, "mean_drift_deg": 0.0}
+            continue
+
+        # Generate shades: 5 tints (toward white) + 5 shades (toward black)
+        lab_base = space.forward(xyz_base.unsqueeze(0))
+        lab_white = space.forward(xyz_white.unsqueeze(0))
+        lab_black = space.forward(xyz_black.unsqueeze(0))
+
+        shade_fracs = [0.1, 0.2, 0.35, 0.5, 0.7,   # tints (mixed with white)
+                       0.7, 0.5, 0.35, 0.2, 0.1]     # shades (mixed with black)
+
+        drifts = []
+        for i, frac in enumerate(shade_fracs):
+            if i < 5:
+                # Tint: interpolate base → white
+                lab_shade = lab_base + frac * (lab_white - lab_base)
+            else:
+                # Shade: interpolate base → black
+                lab_shade = lab_base + frac * (lab_black - lab_base)
+
+            xyz_shade = space.inverse(lab_shade)
+            # Clip to sRGB and measure CIE Lab hue
+            rgb_shade = _linear_to_srgb((xyz_shade @ msi.T).clamp(0, 1)).clamp(0, 1)
+            rgb8 = (rgb_shade * 255).round() / 255.0
+            xyz_q = _srgb_to_linear(rgb8) @ ms.T
+            cielab_shade = _xyz_to_cielab(xyz_q, d65)[0]
+
+            C_shade = (cielab_shade[1]**2 + cielab_shade[2]**2).sqrt()
+            if C_shade < 3.0:
+                continue  # too achromatic, hue undefined
+
+            h_shade = torch.atan2(cielab_shade[2], cielab_shade[1])
+            dh = torch.atan2(torch.sin(h_shade - h_base), torch.cos(h_shade - h_base))
+            drift_deg = (dh.abs() * 180 / PI).item()
+            drifts.append(drift_deg)
+
+        max_drift = max(drifts) if drifts else 0
+        mean_drift = sum(drifts) / len(drifts) if drifts else 0
+        max_drifts.append(max_drift)
+
+        results[name] = {
+            "max_drift_deg": max_drift,
+            "mean_drift_deg": mean_drift,
+        }
+
+    overall_max = max(max_drifts) if max_drifts else 0
+    overall_mean = sum(max_drifts) / len(max_drifts) if max_drifts else 0
+    results["overall_max_drift_deg"] = overall_max
+    results["overall_mean_max_drift_deg"] = overall_mean
+    results["n_hues"] = len(base_colors)
+    return results
+
+
+# ═══════════════════════════════════════════════════════════════
+#  33. Gradient Chroma Preservation (Muddy Midpoint Detection)
 # ═══════════════════════════════════════════════════════════════
 
 def measure_chroma_preservation(space, device):
@@ -689,14 +792,16 @@ def measure_chroma_preservation(space, device):
         xyz1 = ms @ _srgb_to_linear(torch.tensor(rgb1, dtype=torch.float64, device=device))
         xyz2 = ms @ _srgb_to_linear(torch.tensor(rgb2, dtype=torch.float64, device=device))
 
-        lab1 = space.forward(xyz1.unsqueeze(0))
-        lab2 = space.forward(xyz2.unsqueeze(0))
-
-        t = torch.linspace(0, 1, n_steps, dtype=torch.float64, device=device).unsqueeze(1)
-        lab_interp = lab1 + t * (lab2 - lab1)  # (32, 3)
-
-        # Convert to XYZ, clip to sRGB, measure CIE Lab chroma
-        xyz_interp = space.inverse(lab_interp)
+        # Use space.interpolate() if available (PolarBlend overrides this)
+        # Otherwise fall back to linear Lab interpolation
+        if hasattr(space, 'interpolate'):
+            xyz_interp = space.interpolate(xyz1, xyz2, n_steps)
+        else:
+            lab1 = space.forward(xyz1.unsqueeze(0))
+            lab2 = space.forward(xyz2.unsqueeze(0))
+            t = torch.linspace(0, 1, n_steps, dtype=torch.float64, device=device).unsqueeze(1)
+            lab_interp = lab1 + t * (lab2 - lab1)
+            xyz_interp = space.inverse(lab_interp)
         rgb_interp = _linear_to_srgb((xyz_interp @ msi.T).clamp(0, 1)).clamp(0, 1)
         rgb8 = (rgb_interp * 255).round() / 255.0
         xyz_q = _srgb_to_linear(rgb8) @ ms.T

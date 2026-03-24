@@ -27,7 +27,7 @@ def compile_report(space_name, device_name, results):
                 "palette_uniformity", "tint_shade_hue", "dataviz_distinguish",
                 "multistop_gradient", "wcag_midpoint", "harmony_accuracy",
                 "photo_gamut_map", "eased_animation", "hue_agreement",
-                "chroma_preservation"]:
+                "shade_hue_consistency", "chroma_preservation"]:
         if key in results:
             report[key] = results[key]
 
