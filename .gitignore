@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+results/
+*.json
+!core/constants.py
+.DS_Store
