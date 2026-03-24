@@ -143,6 +143,140 @@ def generate_all_pairs(device):
             r2, g2, b2 = _hsv_to_rgb(h / 360, 0.95, min(v + 0.2, 1.0))
             add("boundary_srgb", f"bnd_h{h}_v{v}", [r1, g1, b1], [r2, g2, b2])
 
+    # ── Skin tone gradients ──────────────────────────────────────
+    # Real-world skin tones across Fitzpatrick scale (I-VI)
+    # Most common gradient use case: portrait editing, cosmetics, avatars
+    skin_tones = [
+        ([0.976, 0.906, 0.839], [0.941, 0.800, 0.682]),  # I-II (very light)
+        ([0.941, 0.800, 0.682], [0.871, 0.643, 0.486]),  # II-III
+        ([0.871, 0.643, 0.486], [0.737, 0.494, 0.345]),  # III-IV
+        ([0.737, 0.494, 0.345], [0.545, 0.329, 0.208]),  # IV-V
+        ([0.545, 0.329, 0.208], [0.361, 0.208, 0.129]),  # V-VI (very dark)
+        ([0.976, 0.906, 0.839], [0.361, 0.208, 0.129]),  # I-VI full range
+        ([0.871, 0.643, 0.486], [1.0, 1.0, 1.0]),         # mid skin → white (highlight)
+        ([0.545, 0.329, 0.208], [0.0, 0.0, 0.0]),         # dark skin → black (shadow)
+        ([0.941, 0.800, 0.682], [0.871, 0.580, 0.451]),   # blush/warmth shift
+        ([0.737, 0.494, 0.345], [0.659, 0.510, 0.392]),   # olive undertone shift
+    ]
+    for i, (rgb1, rgb2) in enumerate(skin_tones):
+        add("skin_tone", f"skin_{i}", rgb1, rgb2)
+
+    # ── Earth tone gradients ─────────────────────────────────────
+    # Landscape, architecture, nature photography
+    earth_tones = [
+        ([0.545, 0.353, 0.169], [0.282, 0.471, 0.208]),  # brown → forest green
+        ([0.824, 0.706, 0.549], [0.545, 0.353, 0.169]),   # sand → brown
+        ([0.282, 0.471, 0.208], [0.133, 0.267, 0.133]),   # forest → dark green
+        ([0.824, 0.706, 0.549], [0.529, 0.596, 0.627]),   # sand → stone gray
+        ([0.545, 0.353, 0.169], [0.824, 0.412, 0.118]),   # brown → terracotta
+        ([0.412, 0.325, 0.220], [0.608, 0.537, 0.396]),   # dark earth → light earth
+        ([0.133, 0.267, 0.133], [0.824, 0.706, 0.549]),   # forest → sand (full range)
+        ([0.490, 0.490, 0.412], [0.282, 0.224, 0.141]),   # olive → dark umber
+    ]
+    for i, (rgb1, rgb2) in enumerate(earth_tones):
+        add("earth_tone", f"earth_{i}", rgb1, rgb2)
+
+    # ── Warm↔Cool transitions ────────────────────────────────────
+    # Photography white balance, cinematic color grading
+    warm_cool = [
+        ([1.0, 0.600, 0.200], [0.200, 0.400, 1.0]),       # warm orange → cool blue
+        ([0.957, 0.263, 0.212], [0.129, 0.588, 0.953]),   # red → blue (classic)
+        ([1.0, 0.757, 0.027], [0.247, 0.318, 0.710]),     # amber → indigo
+        ([0.984, 0.549, 0.235], [0.475, 0.643, 0.776]),   # peach → steel blue
+        ([0.804, 0.361, 0.361], [0.361, 0.612, 0.804]),   # warm pink → cool blue
+        ([1.0, 0.843, 0.600], [0.600, 0.800, 1.0]),       # warm white → cool white
+        ([0.933, 0.510, 0.165], [0.165, 0.651, 0.745]),   # tangerine → teal
+        ([0.698, 0.133, 0.133], [0.098, 0.098, 0.698]),   # dark red → dark blue
+        ([1.0, 0.922, 0.804], [0.804, 0.878, 1.0]),       # warm highlight → cool highlight
+        ([0.600, 0.200, 0.000], [0.000, 0.200, 0.600]),   # dark warm → dark cool
+    ]
+    for i, (rgb1, rgb2) in enumerate(warm_cool):
+        add("warm_cool", f"wc_{i}", rgb1, rgb2)
+
+    # ── Very similar colors (dE < 5 stress) ──────────────────────
+    # Banding and quantization stress — where spaces struggle most
+    similar_pairs = [
+        ([0.500, 0.500, 0.500], [0.510, 0.500, 0.500]),   # near-gray, tiny R shift
+        ([0.500, 0.500, 0.500], [0.500, 0.510, 0.510]),   # near-gray, tiny GB shift
+        ([0.200, 0.400, 0.700], [0.210, 0.405, 0.695]),   # blue, tiny perturbation
+        ([0.800, 0.300, 0.300], [0.790, 0.310, 0.305]),   # red, tiny perturbation
+        ([0.100, 0.600, 0.100], [0.105, 0.595, 0.110]),   # green, tiny perturbation
+        ([0.900, 0.900, 0.100], [0.895, 0.895, 0.110]),   # yellow, tiny perturbation
+        ([0.300, 0.300, 0.300], [0.305, 0.305, 0.305]),   # dark gray, minimal step
+        ([0.700, 0.700, 0.700], [0.705, 0.705, 0.705]),   # light gray, minimal step
+        ([0.950, 0.800, 0.650], [0.945, 0.805, 0.655]),   # skin-like, minimal step
+        ([0.400, 0.200, 0.100], [0.405, 0.205, 0.105]),   # brown, minimal step
+        ([0.100, 0.100, 0.400], [0.105, 0.100, 0.395]),   # dark blue, minimal step
+        ([0.600, 0.300, 0.600], [0.595, 0.305, 0.605]),   # purple, minimal step
+    ]
+    for i, (rgb1, rgb2) in enumerate(similar_pairs):
+        add("very_similar", f"sim_{i}", rgb1, rgb2)
+
+    # ── Neon/fluorescent colors ──────────────────────────────────
+    # UI design, gaming, high-saturation displays
+    neon_pairs = [
+        ([0.0, 1.0, 0.0], [1.0, 1.0, 0.0]),               # neon green → neon yellow
+        ([1.0, 0.0, 1.0], [0.0, 1.0, 1.0]),               # magenta → cyan
+        ([1.0, 0.0, 0.5], [0.5, 0.0, 1.0]),               # hot pink → electric purple
+        ([0.0, 1.0, 0.5], [0.0, 0.5, 1.0]),               # spring green → ocean blue
+        ([1.0, 0.4, 0.0], [1.0, 0.0, 0.4]),               # electric orange → neon red
+        ([0.5, 1.0, 0.0], [0.0, 1.0, 0.5]),               # chartreuse → spring green
+        ([1.0, 0.0, 0.0], [1.0, 1.0, 0.0]),               # pure red → pure yellow
+        ([0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),               # pure blue → pure green
+    ]
+    for i, (rgb1, rgb2) in enumerate(neon_pairs):
+        add("neon", f"neon_{i}", rgb1, rgb2)
+
+    # ── Cross-gamut gradients (P3 → sRGB) ────────────────────────
+    # Real scenario: photo editing, wide-gamut display to web export
+    M_P3_early = torch.tensor([
+        [0.4865709486482162, 0.26566769316909306, 0.1982172852343625],
+        [0.2289745640697488, 0.6917385218365064, 0.079286914093745],
+        [0.0, 0.04511338185890264, 1.0439443689009757],
+    ], device=device, dtype=torch.float64)
+    cross_gamut_specific = [
+        ([1.0, 0.0, 0.0], [1.0, 0.5, 0.0], True, False),   # P3 red → sRGB orange
+        ([0.0, 1.0, 0.0], [0.0, 0.8, 0.2], True, False),   # P3 green → sRGB green
+        ([0.0, 0.8, 0.8], [0.0, 0.7, 0.7], True, False),   # P3 teal → sRGB teal
+        ([0.6, 0.0, 1.0], [0.5, 0.0, 0.8], True, False),   # P3 purple → sRGB purple
+    ]
+    for i, (rgb1, rgb2, is_p3_1, is_p3_2) in enumerate(cross_gamut_specific):
+        r1 = torch.tensor(rgb1, device=device, dtype=torch.float64)
+        r2 = torch.tensor(rgb2, device=device, dtype=torch.float64)
+        m1 = M_P3_early if is_p3_1 else M_SRGB
+        m2 = M_P3_early if is_p3_2 else M_SRGB
+        x1 = m1 @ srgb_to_linear(r1)
+        x2 = m2 @ srgb_to_linear(r2)
+        pairs.append(torch.stack([x1, x2]))
+        labels.append(("cross_gamut_specific", f"xgamut_{i}"))
+
+    # ── High-luminance transitions ───────────────────────────────
+    # Near-white chromatic gradients (HDR-like, Y > 0.8)
+    high_lum = [
+        ([1.0, 0.95, 0.85], [0.85, 0.95, 1.0]),           # warm white → cool white
+        ([1.0, 0.90, 0.90], [0.90, 1.0, 0.90]),           # pink white → mint white
+        ([1.0, 1.0, 0.85], [0.85, 0.85, 1.0]),             # cream → lavender
+        ([0.95, 0.85, 0.75], [0.75, 0.85, 0.95]),         # warm light → cool light
+        ([1.0, 0.92, 0.80], [0.92, 0.96, 1.0]),           # sunset glow → sky glow
+        ([0.98, 0.90, 0.85], [0.90, 0.92, 0.98]),         # warm peach → cool periwinkle
+    ]
+    for i, (rgb1, rgb2) in enumerate(high_lum):
+        add("high_luminance", f"hilum_{i}", rgb1, rgb2)
+
+    # ── UI shade palette pairs ───────────────────────────────────
+    # Same hue, 10 lightness levels — Material Design / Tailwind pattern
+    for h_deg in [0, 30, 60, 120, 200, 270, 330]:
+        shades = []
+        for v in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]:
+            r, g, b = _hsv_to_rgb(h_deg / 360, 0.7, v)
+            shades.append([r, g, b])
+        # Adjacent shade pairs
+        for j in range(len(shades) - 1):
+            add("ui_shade", f"shade_h{h_deg}_v{j}", shades[j], shades[j + 1])
+        # Wide jumps (50→900, 100→800)
+        add("ui_shade", f"shade_h{h_deg}_wide1", shades[1], shades[8])
+        add("ui_shade", f"shade_h{h_deg}_wide2", shades[0], shades[9])
+
     # Random sRGB (1000)
     gen = torch.Generator(device=device).manual_seed(42)
     for k in range(1000):

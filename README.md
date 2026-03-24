@@ -2,7 +2,7 @@
 
 A rigorous, GPU-accelerated benchmark for comparing perceptual color spaces.
 
-46 metrics across 8 categories. 2903 gradient pairs spanning sRGB, Display P3, and Rec.2020 gamuts. Fully deterministic, reproducible, and documented — including its own limitations.
+46 metrics across 8 categories. 3038 gradient pairs spanning sRGB, Display P3, and Rec.2020 gamuts. Fully deterministic, reproducible, and documented — including its own limitations.
 
 ## Why
 
@@ -40,9 +40,9 @@ python run.py oklab genspace --json path/to/params.json
 | **Application Scenarios** (8) | Palette L* spacing, tint/shade hue, data viz distinguishability, multi-stop gradient, WCAG contrast, harmony accuracy, photo gamut mapping, eased animation | Does it work in real design tasks? |
 | **Accessibility** (2) | CVD simulation (protan/deutan) gradient dE | Is it usable for color blind users? |
 
-### 2903 Gradient Pairs
+### 3038 Gradient Pairs
 
-- **sRGB** (1417): primaries, complementary, hue sweep, saturation, lightness, near-achromatic, dark/bright extremes, gamut boundary, 1000 random
+- **sRGB** (1552): primaries, complementary, hue sweep, saturation, lightness, near-achromatic, dark/bright extremes, gamut boundary, skin tones, earth tones, warm/cool transitions, very similar colors, neon, high luminance, UI shade palettes, 1000 random
 - **Display P3** (749): primaries, cross-gamut, hue sweep, near-achromatic, boundary, lightness, 500 random
 - **Rec.2020** (743): primaries, cross-gamut, hue sweep, near-achromatic, boundary, lightness, 500 random
 
@@ -85,7 +85,7 @@ colorbench/
   run.py                          # CLI runner (32 test functions + compare)
   core/
     spaces.py                     # 7 space implementations (single source of truth)
-    pairs.py                      # 2903 gradient pair generator (deterministic)
+    pairs.py                      # 3038 gradient pair generator (deterministic)
     gpu_metrics.py                # 8 core metrics (round-trip, gradient, gamut, etc.)
     gpu_metrics_advanced.py       # 12 advanced metrics (CVD, animation, Jacobian, etc.)
     gpu_metrics_perceptual.py     # 12 perceptual/application metrics (Munsell, MacAdam, etc.)

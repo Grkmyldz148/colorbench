@@ -47,9 +47,9 @@ def compile_report(space_name, device_name, results):
 
     # Methodology notes — fairness caveats for anyone reading the JSON
     report["_methodology"] = {
-        "version": "space-test-project v1.0",
+        "version": "colorbench v1.0",
         "total_metrics": 46,
-        "total_gradient_pairs": 2903,
+        "total_gradient_pairs": 3038,
         "gamuts_tested": ["sRGB", "Display P3", "Rec.2020"],
         "perceptual_metric": "CIEDE2000 (simplified, no RT rotation term)",
         "fairness_notes": [
