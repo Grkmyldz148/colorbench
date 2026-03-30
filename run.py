@@ -24,7 +24,7 @@ import torch
 
 torch.set_default_dtype(torch.float64)
 
-from core.spaces import OKLab, CIELab, GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched, GenSpaceBlueFix
+from core.spaces import OKLab, CIELab, GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched, GenSpaceBlueFix, NonlinearM1, HelmCT
 from core.pairs import generate_all_pairs
 from core.gpu_metrics import (
     measure_roundtrip,
@@ -49,6 +49,11 @@ from core.gpu_metrics_advanced import (
     measure_quantization_symmetry,
     measure_channel_monotonicity,
     measure_perceptual_banding,
+    measure_oog_excursion,
+    measure_hue_reversal,
+    measure_primary_hue_discontinuity,
+    measure_negative_lms,
+    measure_extreme_chroma_stability,
 )
 from core.gpu_metrics_perceptual import (
     measure_munsell_value,
@@ -94,6 +99,11 @@ def build_space(space_arg, json_path, device):
             print("Error: genenriched requires --json path", file=sys.stderr)
             sys.exit(1)
         return GenSpaceEnriched(json_path, device)
+    elif s == "nonlinearm1" or s == "nlm1":
+        if not json_path:
+            print("Error: nonlinearm1 requires --json path", file=sys.stderr)
+            sys.exit(1)
+        return NonlinearM1(json_path, device)
     elif s == "bluefix":
         if not json_path:
             print("Error: bluefix requires --json path", file=sys.stderr)
@@ -104,6 +114,11 @@ def build_space(space_arg, json_path, device):
             print("Error: nr requires --json path", file=sys.stderr)
             sys.exit(1)
         return NakaRushtonEnriched(json_path, device)
+    elif s == "helmct" or s == "ct":
+        if not json_path:
+            print("Error: helmct requires --json path", file=sys.stderr)
+            sys.exit(1)
+        return HelmCT(json_path, device)
     else:
         print(f"Unknown space: {space_arg}", file=sys.stderr)
         sys.exit(1)
@@ -119,175 +134,201 @@ def run_test(space, device, device_name):
     results = {}
 
     t0 = time.time()
-    print("  [1/34] Round-trip...", flush=True)
+    print("  [1/39] Round-trip...", flush=True)
     results["roundtrip"] = measure_roundtrip(space, device)
     print(f"         {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [2/34] Achromatic...", flush=True)
+    print("  [2/39] Achromatic...", flush=True)
     results["achromatic"] = measure_achromatic(space, device)
     print(f"         {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [3/34] Gradient pairs...", flush=True)
+    print("  [3/39] Gradient pairs...", flush=True)
     pairs_xyz, pair_labels = generate_all_pairs(device)
     results["gradients"] = measure_gradients(space, pairs_xyz, pair_labels, device)
     print(f"         {time.time()-t0:.1f}s ({len(pair_labels)} pairs)")
 
     t0 = time.time()
-    print("  [4/34] Gamut geometry (360°)...", flush=True)
+    print("  [4/39] Gamut geometry (360°)...", flush=True)
     results["gamut"] = measure_gamut(space, device)
     print(f"         {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [5/34] Gamut mapping...", flush=True)
+    print("  [5/39] Gamut mapping...", flush=True)
     results["gamut_mapping"] = measure_gamut_mapping(space, device)
     print(f"         {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [6/34] Hue properties...", flush=True)
+    print("  [6/39] Hue properties...", flush=True)
     results["hue"] = measure_hue(space, device)
     print(f"         {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [7/34] Special gradients...", flush=True)
+    print("  [7/39] Special gradients...", flush=True)
     results["specials"] = measure_special_gradients(space, device)
     print(f"         {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [8/34] Stability...", flush=True)
+    print("  [8/39] Stability...", flush=True)
     results["stability"] = measure_stability(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [9/34] CVD simulation...", flush=True)
+    print("  [9/39] CVD simulation...", flush=True)
     results["cvd"] = measure_cvd(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [10/34] Animation smoothness...", flush=True)
+    print("  [10/39] Animation smoothness...", flush=True)
     results["animation"] = measure_animation(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [11/34] Dark/light extremes...", flush=True)
+    print("  [11/39] Dark/light extremes...", flush=True)
     results["extremes"] = measure_extremes(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [12/34] Jacobian condition...", flush=True)
+    print("  [12/39] Jacobian condition...", flush=True)
     results["jacobian"] = measure_jacobian(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [13/34] WCAG contrast...", flush=True)
+    print("  [13/39] WCAG contrast...", flush=True)
     results["contrast"] = measure_contrast(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [14/34] Hue leaf constancy...", flush=True)
+    print("  [14/39] Hue leaf constancy...", flush=True)
     results["hue_leaf"] = measure_hue_leaf(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [15/34] 3-color gradients...", flush=True)
+    print("  [15/39] 3-color gradients...", flush=True)
     results["3color"] = measure_3color_gradients(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [16/34] Perceptual banding...", flush=True)
+    print("  [16/39] Perceptual banding...", flush=True)
     results["banding"] = measure_perceptual_banding(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [17/34] Double round-trip...", flush=True)
+    print("  [17/39] Double round-trip...", flush=True)
     results["double_rt"] = measure_double_roundtrip(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [18/34] Cross-gamut consistency...", flush=True)
+    print("  [18/39] Cross-gamut consistency...", flush=True)
     results["cross_gamut"] = measure_cross_gamut_consistency(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [19/34] 8-bit quantization symmetry...", flush=True)
+    print("  [19/39] 8-bit quantization symmetry...", flush=True)
     results["quantization"] = measure_quantization_symmetry(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [20/34] Channel monotonicity...", flush=True)
+    print("  [20/39] Channel monotonicity...", flush=True)
     results["channel_mono"] = measure_channel_monotonicity(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
-    # ── Perceptual & Application metrics (NEW) ──
+    # ── Perceptual & Application metrics ──
     t0 = time.time()
-    print("  [21/34] Munsell Value uniformity...", flush=True)
+    print("  [21/39] Munsell Value uniformity...", flush=True)
     results["munsell_value"] = measure_munsell_value(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [22/34] Munsell Hue spacing...", flush=True)
+    print("  [22/39] Munsell Hue spacing...", flush=True)
     results["munsell_hue"] = measure_munsell_hue(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [23/34] MacAdam ellipse isotropy...", flush=True)
+    print("  [23/39] MacAdam ellipse isotropy...", flush=True)
     results["macadam_isotropy"] = measure_macadam_isotropy(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [24/34] Palette L* spacing...", flush=True)
+    print("  [24/39] Palette L* spacing...", flush=True)
     results["palette_uniformity"] = measure_palette_uniformity(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [25/34] Tint/shade hue preservation...", flush=True)
+    print("  [25/39] Tint/shade hue preservation...", flush=True)
     results["tint_shade_hue"] = measure_tint_shade_hue(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [26/34] Data viz distinguishability...", flush=True)
+    print("  [26/39] Data viz distinguishability...", flush=True)
     results["dataviz_distinguish"] = measure_dataviz_distinguishability(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [27/34] Multi-stop gradient CV...", flush=True)
+    print("  [27/39] Multi-stop gradient CV...", flush=True)
     results["multistop_gradient"] = measure_multistop_gradient(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [28/34] WCAG midpoint contrast...", flush=True)
+    print("  [28/39] WCAG midpoint contrast...", flush=True)
     results["wcag_midpoint"] = measure_wcag_midpoint_contrast(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [29/34] Palette harmony accuracy...", flush=True)
+    print("  [29/39] Palette harmony accuracy...", flush=True)
     results["harmony_accuracy"] = measure_harmony_accuracy(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [30/34] Photo gamut map fidelity...", flush=True)
+    print("  [30/39] Photo gamut map fidelity...", flush=True)
     results["photo_gamut_map"] = measure_photo_gamut_map(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [31/34] Eased animation CV...", flush=True)
+    print("  [31/39] Eased animation CV...", flush=True)
     results["eased_animation"] = measure_eased_animation(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [32/34] Hue agreement with CIE Lab...", flush=True)
+    print("  [32/39] Hue agreement with CIE Lab...", flush=True)
     results["hue_agreement"] = measure_hue_agreement(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [33/34] Shade palette hue consistency...", flush=True)
+    print("  [33/39] Shade palette hue consistency...", flush=True)
     results["shade_hue_consistency"] = measure_shade_hue_consistency(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     t0 = time.time()
-    print("  [34/34] Chroma preservation (muddy midpoints)...", flush=True)
+    print("  [34/39] Chroma preservation (muddy midpoints)...", flush=True)
     results["chroma_preservation"] = measure_chroma_preservation(space, device)
+    print(f"          {time.time()-t0:.1f}s")
+
+    # ── New Structural metrics ──
+    t0 = time.time()
+    print("  [35/39] Out-of-gamut excursion...", flush=True)
+    results["oog_excursion"] = measure_oog_excursion(space, device)
+    print(f"          {time.time()-t0:.1f}s")
+
+    t0 = time.time()
+    print("  [36/39] Hue reversal detection...", flush=True)
+    results["hue_reversal"] = measure_hue_reversal(space, device)
+    print(f"          {time.time()-t0:.1f}s")
+
+    t0 = time.time()
+    print("  [37/39] Near-primary hue discontinuity...", flush=True)
+    results["primary_hue_disc"] = measure_primary_hue_discontinuity(space, device)
+    print(f"          {time.time()-t0:.1f}s")
+
+    t0 = time.time()
+    print("  [38/39] Negative LMS detection...", flush=True)
+    results["negative_lms"] = measure_negative_lms(space, device)
+    print(f"          {time.time()-t0:.1f}s")
+
+    t0 = time.time()
+    print("  [39/39] Extreme chroma stability...", flush=True)
+    results["extreme_chroma_stab"] = measure_extreme_chroma_stability(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
     report = compile_report(space.name, device_name, results)

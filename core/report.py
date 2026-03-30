@@ -27,7 +27,10 @@ def compile_report(space_name, device_name, results):
                 "palette_uniformity", "tint_shade_hue", "dataviz_distinguish",
                 "multistop_gradient", "wcag_midpoint", "harmony_accuracy",
                 "photo_gamut_map", "eased_animation", "hue_agreement",
-                "shade_hue_consistency", "chroma_preservation"]:
+                "shade_hue_consistency", "chroma_preservation",
+                # Structural (Faz 3)
+                "oog_excursion", "hue_reversal", "primary_hue_disc",
+                "negative_lms", "extreme_chroma_stab"]:
         if key in results:
             report[key] = results[key]
 
@@ -49,7 +52,7 @@ def compile_report(space_name, device_name, results):
     # Methodology notes — fairness caveats for anyone reading the JSON
     report["_methodology"] = {
         "version": "colorbench v1.0",
-        "total_metrics": 46,
+        "total_metrics": 54,
         "total_gradient_pairs": 3038,
         "gamuts_tested": ["sRGB", "Display P3", "Rec.2020"],
         "perceptual_metric": "CIEDE2000 (simplified, no RT rotation term)",
@@ -201,6 +204,12 @@ def print_summary(report):
                   f"cliff={gm.get('cliff_max',0)*100:.0f}%  "
                   f"smooth={gm.get('smoothness_max_jump',0):.4f}  "
                   f"vol={gm.get('volume_fraction',0)*100:.0f}%")
+            brj = gm.get('boundary_max_rel_jump', 0)
+            bah = gm.get('boundary_bad_hues', 0)
+            bwh = gm.get('boundary_worst_hue', 0)
+            if brj > 0.05 or bah > 0:
+                print(f"              boundary: max_rel_jump={brj:.3f}  "
+                      f"bad_hues={bah}/360  worst_hue={bwh}deg")
             if gm.get("anomalies"):
                 for a in gm["anomalies"]:
                     print(f"       ! h={a['hue_from']}->{a['hue_to']}: "
@@ -362,5 +371,68 @@ def print_summary(report):
             total = d["total_violations"]
             print(f"       {name:5s}: {total} violations  "
                   f"(R={v['R']} G={v['G']} B={v['B']})")
+
+    # 21. OOG excursion
+    if "oog_excursion" in report:
+        oog = report["oog_excursion"]
+        print(f"\n  21. Out-of-Gamut Excursion")
+        print(f"     Pairs with excursion: {oog['excursion_pairs']}/{oog['total_pairs']} "
+              f"({oog['excursion_pct']:.1f}%)")
+        print(f"     Max OOG distance:     {oog['max_oog_dist']:.4f}")
+        if oog.get("worst_pairs"):
+            for p in oog["worst_pairs"][:5]:
+                print(f"       ! {p['pair']:15s} OOG steps={p['oog_steps']}  "
+                      f"max_dist={p['max_oog_dist']:.4f}")
+
+    # 22. Hue reversal
+    if "hue_reversal" in report:
+        hr = report["hue_reversal"]
+        print(f"\n  22. Hue Reversal Detection")
+        print(f"     Hues with reversals:  {hr['hues_with_reversals']}/{hr['total_hues_tested']}")
+        print(f"     Max reversal angle:   {hr['max_reversal_angle']:.1f}deg")
+        if hr.get("worst_hues"):
+            for h in hr["worst_hues"][:5]:
+                print(f"       ! h={h['hue']:>3d}deg: {h['n_reversals']} reversals  "
+                      f"max={h['max_angle']:.1f}deg")
+
+    # 23. Primary hue discontinuity
+    if "primary_hue_disc" in report:
+        phd = report["primary_hue_disc"]
+        print(f"\n  23. Near-Primary Hue Discontinuity")
+        print(f"     sRGB max jump:  {phd['srgb_max_jump']:.2f}deg  "
+              f"mean={phd['srgb_mean_jump']:.2f}deg")
+        print(f"     P3 max jump:    {phd['p3_max_jump']:.2f}deg  "
+              f"mean={phd['p3_mean_jump']:.2f}deg")
+        if phd.get("per_primary"):
+            for name, d in phd["per_primary"].items():
+                if d["max_hue_jump_deg"] > 5:
+                    print(f"       ! {name:8s}: max_jump={d['max_hue_jump_deg']:.2f}deg")
+
+    # 24. Negative LMS
+    if "negative_lms" in report:
+        nl = report["negative_lms"]
+        print(f"\n  24. Negative LMS Detection")
+        print(f"     Colors with neg LMS:  {nl['n_negative']}/10000 "
+              f"({nl['pct_negative']:.2f}%)")
+        print(f"     Max negative value:   {nl['max_negative']:.4f}")
+        if nl.get("per_channel"):
+            for ch_name, ch_data in nl["per_channel"].items():
+                if ch_data["n_negative"] > 0:
+                    print(f"       {ch_name}: {ch_data['n_negative']} neg  "
+                          f"min={ch_data['min_value']:.6f}")
+
+    # 25. Extreme chroma stability
+    if "extreme_chroma_stab" in report:
+        ecs = report["extreme_chroma_stab"]
+        print(f"\n  25. Extreme Chroma Stability")
+        print(f"     Max amplification:    {ecs['max_amplification']:.2f}x")
+        print(f"     NaN: {ecs['nan_count']}  Inf: {ecs['inf_count']}")
+        if ecs.get("per_color"):
+            worst = sorted(ecs["per_color"].items(),
+                           key=lambda x: -x[1].get("amplification", 0))[:5]
+            for name, d in worst:
+                amp = d.get("amplification", 0)
+                if amp > 1.0:
+                    print(f"       {name:15s}: {amp:.2f}x")
 
     print(f"\n{'=' * 64}")

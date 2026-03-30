@@ -308,7 +308,7 @@ def generate_all_pairs(device):
     for n, rgb in primaries.items():
         rgb_t = torch.tensor(rgb, device=device, dtype=torch.float64)
         x1 = M_P3 @ srgb_to_linear(rgb_t)
-        x2 = M_SRGB @ srgb_to_linear(torch.tensor([1., 1., 1.], device=device))
+        x2 = M_SRGB @ srgb_to_linear(torch.tensor([1., 1., 1.], device=device, dtype=torch.float64))
         pairs.append(torch.stack([x1, x2]))
         labels.append(("p3_to_srgb", f"P3_{n}->sRGB_W"))
 

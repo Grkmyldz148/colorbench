@@ -12,12 +12,12 @@ import torch
 import numpy as np
 
 # CIE constants
-D65 = torch.tensor([0.95047, 1.0, 1.08883])
+D65 = torch.tensor([0.95047, 1.0, 1.08883], dtype=torch.float64)
 M_SRGB = torch.tensor([
     [0.4124564, 0.3575761, 0.1804375],
     [0.2126729, 0.7151522, 0.0721750],
     [0.0193339, 0.1191920, 0.9503041],
-])
+], dtype=torch.float64)
 
 
 class ColorSpace(ABC):
@@ -439,6 +439,501 @@ class CustomSpace(ColorSpace):
 
     def inverse(self, lab):
         return self._inv(lab)
+
+
+class NonlinearM1(ColorSpace):
+    """Nonlinear M1 with blue-selective cross term: lms[0] += d*(1-Y)*Z.
+
+    Keeps v7b's gamut geometry while fixing blue-white gradient.
+    Inverse: Newton iteration with analytical Jacobian.
+    """
+
+    def __init__(self, json_path, device, label=None):
+        import json as _json
+        with open(json_path) as f:
+            d = _json.load(f)
+        self.name = label or f"NonlinearM1({os.path.basename(json_path)})"
+        dev = device
+        self._M1 = torch.tensor(d["M1"], dtype=torch.float64, device=dev)
+        self._M2 = torch.tensor(d["M2"], dtype=torch.float64, device=dev)
+        self._M1_inv = torch.linalg.inv(self._M1)
+        self._M2_inv = torch.linalg.inv(self._M2)
+        self._d = d.get("cross_term_d", 0.0)
+        self._k_ach = d.get("cross_term_k", 0.0)
+        lc = d.get("L_corr", [0, 0, 0])
+        self._lc = torch.tensor(lc, dtype=torch.float64, device=dev)
+        self._has_lc = any(abs(x) > 1e-10 for x in lc)
+
+    def _fwd_lms(self, xyz):
+        """XYZ → LMS with cross term."""
+        lms = xyz @ self._M1.T
+        if self._d != 0:
+            if self._k_ach != 0:
+                cross = self._d * (xyz[:, 2] - self._k_ach * xyz[:, 1])
+            else:
+                cross = self._d * (1.0 - xyz[:, 1]) * xyz[:, 2]
+            lms = lms.clone()
+            lms[:, 0] = lms[:, 0] + cross
+        return lms
+
+    def _inv_lms(self, lms_target):
+        """LMS → XYZ via Newton iteration."""
+        xyz = lms_target @ self._M1_inv.T  # initial guess
+        for _ in range(50):
+            lms = xyz @ self._M1.T
+            if self._d != 0:
+                if self._k_ach != 0:
+                    cross = self._d * (xyz[:, 2] - self._k_ach * xyz[:, 1])
+                else:
+                    cross = self._d * (1.0 - xyz[:, 1]) * xyz[:, 2]
+                lms = lms.clone()
+                lms[:, 0] = lms[:, 0] + cross
+            err = lms - lms_target  # (N, 3)
+
+            # Jacobian per sample (batch Newton)
+            J = self._M1.unsqueeze(0).expand(xyz.shape[0], -1, -1).clone()
+            if self._d != 0:
+                if self._k_ach != 0:
+                    J[:, 0, 1] = J[:, 0, 1] + (-self._d * self._k_ach)
+                    J[:, 0, 2] = J[:, 0, 2] + self._d
+                else:
+                    J[:, 0, 1] = J[:, 0, 1] + (-self._d * xyz[:, 2])
+                    J[:, 0, 2] = J[:, 0, 2] + (self._d * (1.0 - xyz[:, 1]))
+
+            # Solve J @ dx = err → dx = J^-1 @ err
+            dx = torch.linalg.solve(J, err.unsqueeze(-1)).squeeze(-1)
+            xyz = xyz - dx
+        return xyz
+
+    def forward(self, xyz):
+        lms = self._fwd_lms(xyz)
+        lms_c = torch.sign(lms) * lms.abs().clamp(min=1e-30).pow(1.0 / 3.0)
+        lab = lms_c @ self._M2.T
+        if self._has_lc:
+            L = lab[:, 0:1]
+            c1, c2, c3 = self._lc[0], self._lc[1], self._lc[2]
+            t = L * (1.0 - L)
+            L_new = L + c1*t + c2*t*(2.0*L - 1.0) + c3*L**2*(1.0 - L)**2
+            lab = torch.cat([L_new, lab[:, 1:2], lab[:, 2:3]], dim=1)
+        return lab
+
+    def inverse(self, lab):
+        lab = lab.clone()
+        if self._has_lc:
+            L1 = lab[:, 0:1]
+            L = L1.clone()
+            c1, c2, c3 = self._lc[0], self._lc[1], self._lc[2]
+            for _ in range(15):
+                t = L * (1.0 - L)
+                f = L + c1*t + c2*t*(2*L-1) + c3*L**2*(1-L)**2 - L1
+                df = 1 + c1*(1-2*L) + c2*(6*L**2-6*L+1) + c3*2*L*(1-L)*(1-2*L)
+                L = L - f / df.clamp(min=1e-12)
+            lab = torch.cat([L, lab[:, 1:2], lab[:, 2:3]], dim=1)
+        lms_c = lab @ self._M2_inv.T
+        lms = torch.sign(lms_c) * lms_c.abs().pow(3.0)
+        return self._inv_lms(lms)
+
+
+class HelmCT(ColorSpace):
+    """Helmlab cross-term pipeline with chroma-preserving hue rotation + L_corr7.
+
+    Pipeline: M1 → cross_term(d,k) → cbrt → M2 → chroma_hue_rot → L_corr7 → Lab
+    Inverse: L_corr7(Newton) → hue_rot(fixed-point) → M2_inv → cube → cross_term_inv(analytical) → M1_inv
+    """
+
+    def __init__(self, json_path, device, label=None):
+        import json as _json
+        with open(json_path) as f:
+            d = _json.load(f)
+        self.name = label or f"HelmCT({os.path.basename(json_path)})"
+        dev = device
+        self._M1 = torch.tensor(d["M1"], dtype=torch.float64, device=dev)
+        self._M2 = torch.tensor(d["M2"], dtype=torch.float64, device=dev)
+        self._M2_inv = torch.linalg.inv(self._M2)
+
+        # Cross-term L: lms[0] += d*(Z - k*Y)
+        self._d = d.get("cross_d", 0.0)
+        self._k = d.get("cross_k", 0.0)
+        # Cross-term M: lms[1] += d2*(Z - k2*X)
+        self._d2 = d.get("cross_d2", 0.0)
+        self._k2 = d.get("cross_k2", 0.0)
+        # Cross-term S: lms[2] += d3*(X - k3*Y)
+        self._d3 = d.get("cross_d3", 0.0)
+        self._k3 = d.get("cross_k3", 0.0)
+
+        # Analytical inverse for cross-terms: modify M1
+        self._M1_mod = self._M1.clone()
+        if self._d != 0:
+            self._M1_mod[0, 1] = self._M1_mod[0, 1] - self._d * self._k
+            self._M1_mod[0, 2] = self._M1_mod[0, 2] + self._d
+        if self._d2 != 0:
+            self._M1_mod[1, 0] = self._M1_mod[1, 0] - self._d2 * self._k2
+            self._M1_mod[1, 2] = self._M1_mod[1, 2] + self._d2
+        if self._d3 != 0:
+            self._M1_mod[2, 0] = self._M1_mod[2, 0] + self._d3
+            self._M1_mod[2, 1] = self._M1_mod[2, 1] - self._d3 * self._k3
+        self._M1_mod_inv = torch.linalg.inv(self._M1_mod)
+
+        # Transfer function (cbrt default, or naka_rushton, power, cielab_delta)
+        self._transfer = d.get("transfer", "cbrt")
+        if self._transfer == "naka_rushton":
+            self._nr_n = d.get("nr_n", 0.76)
+            self._nr_sigma = d.get("nr_sigma", 0.33)
+            self._nr_s = d.get("nr_s", 0.71)
+        elif self._transfer == "power":
+            self._gamma_val = d.get("gamma_val", 1.0/3.0)
+        elif self._transfer == "cielab_delta":
+            self._cielab_delta = d.get("cielab_delta", 0.008856)
+            self._cielab_kappa = d.get("cielab_kappa", 903.3)
+        elif self._transfer == "softcbrt":
+            self._softcbrt_eps = d.get("softcbrt_eps", 0.001)
+
+        # Chroma-preserving hue rotation (Fourier 4 or 6)
+        # Support both formats: "hue_correction" list OR individual "hue_cos1/sin1" fields
+        hc = d.get("hue_correction", None)
+        if hc is None:
+            hc = [d.get("hue_cos1", 0), d.get("hue_sin1", 0),
+                  d.get("hue_cos2", 0), d.get("hue_sin2", 0),
+                  d.get("hue_cos3", 0), d.get("hue_sin3", 0)]
+        while len(hc) < 6:
+            hc.append(0.0)
+        self._hc = hc
+        self._has_hc = any(abs(x) > 1e-10 for x in hc)
+
+        # L_corr degree 7
+        lc7 = d.get("L_corr_7", None)
+        if lc7 is not None:
+            self._lc7 = torch.tensor(lc7, dtype=torch.float64, device=dev)
+            self._has_lc7 = True
+        else:
+            self._lc7 = None
+            self._has_lc7 = False
+
+        # L_corr degree 5
+        lc5 = d.get("L_corr_5", None)
+        if lc5 is not None and not self._has_lc7:
+            self._lc5 = torch.tensor(lc5, dtype=torch.float64, device=dev)
+            self._has_lc5 = True
+        else:
+            self._lc5 = None
+            self._has_lc5 = False
+
+        # Piecewise-linear L_corr (analytically invertible!)
+        lcpw = d.get("L_corr_pw", None)
+        if lcpw is not None and not self._has_lc7 and not self._has_lc5:
+            # lcpw = shifts at interior breakpoints
+            # step size from JSON or default 1/(len+1)
+            n = len(lcpw)
+            step = d.get("L_corr_pw_step", 1.0 / (n + 1))
+            shifts = [0.0] + list(lcpw) + [0.0]
+            breakpoints = [i * step for i in range(n + 2)]
+            # Ensure last breakpoint is 1.0
+            breakpoints[-1] = 1.0
+            # L_out breakpoints = L + shift
+            self._pw_L_in = torch.tensor(breakpoints, dtype=torch.float64, device=dev)
+            self._pw_L_out = torch.tensor([b + s for b, s in zip(breakpoints, shifts)],
+                                           dtype=torch.float64, device=dev)
+            self._has_pw = True
+        else:
+            self._has_pw = False
+
+        # L_corr degree 3 fallback
+        lc = d.get("L_corr", [0, 0, 0])
+        self._lc = torch.tensor(lc, dtype=torch.float64, device=dev)
+        self._has_lc = (any(abs(x) > 1e-10 for x in lc) and
+                        not self._has_lc7 and not self._has_lc5 and not self._has_pw)
+
+        # Chroma power + L-dependent chroma scaling
+        self._cp = d.get("chroma_power", 1.0)
+        self._ck = d.get("chroma_k", 0.0)
+        # Chroma-aware cp: smooth transition cp=1.0 at C=0, cp=_cp at high C
+        # cp_delta controls transition sharpness (higher = sharper)
+        self._cp_delta = d.get("chroma_power_delta", 0.0)  # 0 = classic (uniform cp)
+        self._has_cp = (abs(self._cp - 1.0) > 1e-10 or abs(self._ck) > 1e-10
+                        or abs(self._cp_delta) > 1e-10)
+
+        # Ab-axis scaling: a *= s_a, b *= s_b (anisotropic)
+        self._sa = d.get("scale_a", 1.0)
+        self._sb = d.get("scale_b", 1.0)
+        self._has_ab_scale = abs(self._sa - 1.0) > 1e-10 or abs(self._sb - 1.0) > 1e-10
+
+        # Hue-dependent L correction: L -= delta * max(0, cos(h - center))^width
+        self._hue_L_delta = d.get("hue_L_delta", 0.0)
+        self._hue_L_center = d.get("hue_L_center", -1.5708)  # -π/2 = blue
+        self._hue_L_width = d.get("hue_L_width", 2.0)
+        self._has_hue_L = abs(self._hue_L_delta) > 1e-10
+
+    def _pw_forward(self, L):
+        """Piecewise-linear L correction: L_out = L + interp(shifts, L)."""
+        # For each input L, find segment and interpolate
+        L_in = self._pw_L_in   # [0, 0.1, 0.2, ..., 1.0]
+        L_out = self._pw_L_out  # [0+s0, 0.1+s1, ...]
+        # Use torch searchsorted for vectorized segment finding
+        idx = torch.searchsorted(L_in, L.clamp(0, 1), right=True) - 1
+        idx = idx.clamp(0, len(L_in) - 2)
+        # Linear interpolation within segment
+        L_lo = L_in[idx]
+        L_hi = L_in[idx + 1]
+        t = (L - L_lo) / (L_hi - L_lo).clamp(min=1e-30)
+        t = t.clamp(0, 1)
+        return L_out[idx] + t * (L_out[idx + 1] - L_out[idx])
+
+    def _pw_inverse(self, L_target):
+        """Exact inverse of piecewise-linear L correction."""
+        L_out = self._pw_L_out  # output breakpoints (monotonically increasing)
+        L_in = self._pw_L_in    # input breakpoints
+        # Find segment in OUTPUT space
+        idx = torch.searchsorted(L_out, L_target.clamp(L_out[0], L_out[-1]), right=True) - 1
+        idx = idx.clamp(0, len(L_out) - 2)
+        # Linear interpolation in reverse
+        Lo_lo = L_out[idx]
+        Lo_hi = L_out[idx + 1]
+        t = (L_target - Lo_lo) / (Lo_hi - Lo_lo).clamp(min=1e-30)
+        t = t.clamp(0, 1)
+        return L_in[idx] + t * (L_in[idx + 1] - L_in[idx])
+
+    def _apply_lc7(self, L):
+        p = self._lc7
+        t = L * (1.0 - L)
+        h = 0.5 - L
+        return L + p[0]*t + p[1]*t*h + p[2]*t*t + p[3]*t*t*h + p[4]*t*t*t + p[5]*t*t*t*h + p[6]*t*t*t*t
+
+    def _apply_lc7_deriv(self, L):
+        """Derivative of L_corr7 for Newton iteration."""
+        p = self._lc7
+        t = L * (1.0 - L)
+        dt = 1.0 - 2.0 * L
+        h = 0.5 - L
+        dh = -1.0
+        t2 = t * t
+        t3 = t2 * t
+        return (1.0
+                + p[0] * dt
+                + p[1] * (dt * h + t * dh)
+                + p[2] * 2 * t * dt
+                + p[3] * (2 * t * dt * h + t2 * dh)
+                + p[4] * 3 * t2 * dt
+                + p[5] * (3 * t2 * dt * h + t3 * dh)
+                + p[6] * 4 * t3 * dt)
+
+    def forward(self, xyz):
+        # 1. M1
+        lms = xyz @ self._M1.T
+        # 2. Cross-terms
+        if self._d != 0 or self._d2 != 0 or self._d3 != 0:
+            lms = lms.clone()
+            if self._d != 0:
+                lms[:, 0] = lms[:, 0] + self._d * (xyz[:, 2] - self._k * xyz[:, 1])
+            if self._d2 != 0:
+                lms[:, 1] = lms[:, 1] + self._d2 * (xyz[:, 2] - self._k2 * xyz[:, 0])
+            if self._d3 != 0:
+                lms[:, 2] = lms[:, 2] + self._d3 * (xyz[:, 0] - self._k3 * xyz[:, 1])
+        # 3. Transfer function
+        if self._transfer == "naka_rushton":
+            ax = torch.abs(lms).clamp(min=1e-30)
+            lms_c = torch.sign(lms) * self._nr_s * ax.pow(self._nr_n) / (ax.pow(self._nr_n) + self._nr_sigma ** self._nr_n)
+        elif self._transfer == "power":
+            gamma = self._gamma_val
+            lms_c = torch.sign(lms) * torch.abs(lms).pow(gamma)
+        elif self._transfer == "cielab_delta":
+            delta = self._cielab_delta
+            kappa = self._cielab_kappa
+            ax = torch.abs(lms)
+            cbrt_val = ax.pow(1.0 / 3.0)
+            lin_val = (kappa * ax + 16.0) / 116.0
+            lms_c = torch.sign(lms) * torch.where(ax > delta, cbrt_val, lin_val)
+        elif self._transfer == "softcbrt":
+            eps = self._softcbrt_eps
+            ax = torch.abs(lms)
+            lms_c = torch.sign(lms) * ((ax + eps).pow(1.0 / 3.0) - eps ** (1.0 / 3.0))
+        else:
+            lms_c = torch.sign(lms) * torch.abs(lms).pow(1.0 / 3.0)
+        # 4. M2
+        raw = lms_c @ self._M2.T
+        L, a, b = raw[:, 0], raw[:, 1], raw[:, 2]
+        # 5. Chroma-preserving hue rotation
+        if self._has_hc:
+            C = torch.sqrt(a * a + b * b + 1e-30)
+            h = torch.atan2(b, a)
+            c1, s1, c2, s2, c3, s3 = self._hc
+            dh = (c1 * torch.cos(h) + s1 * torch.sin(h) +
+                  c2 * torch.cos(2*h) + s2 * torch.sin(2*h) +
+                  c3 * torch.cos(3*h) + s3 * torch.sin(3*h))
+            h_new = h + dh
+            a = C * torch.cos(h_new)
+            b = C * torch.sin(h_new)
+        # 5b. Chroma power + L-dependent scaling
+        if self._has_cp:
+            C = torch.sqrt(a * a + b * b + 1e-30)
+            scale = torch.ones_like(C)
+            if abs(self._cp - 1.0) > 1e-10:
+                if abs(self._cp_delta) > 1e-10:
+                    # Chroma-aware: effective_cp smoothly transitions from 1.0 (at C=0) to cp (at high C)
+                    # blend = C^2 / (C^2 + delta^2) → 0 at C=0, 1 at C>>delta
+                    blend = C * C / (C * C + self._cp_delta * self._cp_delta)
+                    effective_cp = 1.0 + blend * (self._cp - 1.0)
+                    scale = scale * C.pow(effective_cp - 1.0)
+                else:
+                    scale = scale * C.pow(self._cp - 1.0)
+            if abs(self._ck) > 1e-10:
+                scale = scale * torch.exp(self._ck * (L - 0.5))
+            a = a * scale
+            b = b * scale
+        # 5d. Ab-axis scaling
+        if self._has_ab_scale:
+            a = a * self._sa
+            b = b * self._sb
+        # 5e. Hue-dependent L correction
+        if self._has_hue_L:
+            h_cur = torch.atan2(b, a)
+            cos_diff = torch.cos(h_cur - self._hue_L_center)
+            weight = cos_diff.clamp(min=0).pow(self._hue_L_width)
+            L = L - self._hue_L_delta * weight * L * (1.0 - L)
+        # 6. L_corr
+        if self._has_pw:
+            # Piecewise-linear: exact forward
+            L = self._pw_forward(L)
+        elif self._has_lc7:
+            L = self._apply_lc7(L)
+        elif self._has_lc5:
+            p = self._lc5
+            t = L * (1.0 - L)
+            h5 = 0.5 - L
+            L = L + p[0]*t + p[1]*t*h5 + p[2]*t*t + p[3]*t*t*h5 + p[4]*t*t*t
+        elif self._has_lc:
+            t = L * (1.0 - L)
+            L = L + self._lc[0]*t + self._lc[1]*t*(2*L-1) + self._lc[2]*t*t
+        return torch.stack([L, a, b], dim=-1)
+
+    def inverse(self, lab):
+        L_out, a, b = lab[:, 0].clone(), lab[:, 1].clone(), lab[:, 2].clone()
+
+        # 6. Undo L_corr
+        L = L_out.clone()
+        if self._has_pw:
+            # Piecewise-linear: exact inverse (no Newton!)
+            L = self._pw_inverse(L_out)
+        elif self._has_lc7:
+            for _ in range(30):
+                f = self._apply_lc7(L) - L_out
+                df = self._apply_lc7_deriv(L)
+                df = torch.where(df.abs() < 1e-12, torch.ones_like(df), df)
+                L = L - f / df
+        elif self._has_lc5:
+            p = self._lc5
+            for _ in range(20):
+                t = L * (1.0 - L)
+                h5 = 0.5 - L
+                dt = 1.0 - 2.0 * L
+                dh5 = -1.0
+                f = L + p[0]*t + p[1]*t*h5 + p[2]*t*t + p[3]*t*t*h5 + p[4]*t*t*t - L_out
+                t2 = t * t
+                df = (1.0 + p[0]*dt + p[1]*(dt*h5+t*dh5) + p[2]*2*t*dt +
+                      p[3]*(2*t*dt*h5+t2*dh5) + p[4]*3*t2*dt)
+                df = torch.where(df.abs() < 1e-12, torch.ones_like(df), df)
+                L = L - f / df
+        elif self._has_lc:
+            c1, c2, c3 = self._lc[0], self._lc[1], self._lc[2]
+            for _ in range(15):
+                t = L * (1.0 - L)
+                f = L + c1*t + c2*t*(2*L-1) + c3*t*t - L_out
+                dt = 1.0 - 2.0 * L
+                df = 1 + c1*dt + c2*(dt*(2*L-1)+t*2) + c3*2*t*dt
+                df = torch.where(df.abs() < 1e-12, torch.ones_like(df), df)
+                L = L - f / df
+
+        # 5e. Undo hue-dependent L correction (Newton)
+        if self._has_hue_L:
+            h_cur = torch.atan2(b, a)
+            cos_diff = torch.cos(h_cur - self._hue_L_center)
+            weight = cos_diff.clamp(min=0).pow(self._hue_L_width)
+            L_target = L.clone()
+            for _ in range(20):
+                f = L - self._hue_L_delta * weight * L * (1.0 - L) - L_target
+                df = 1.0 - self._hue_L_delta * weight * (1.0 - 2.0 * L)
+                df = torch.where(df.abs() < 1e-12, torch.ones_like(df), df)
+                L = L - f / df
+        # 5c. Undo ab-axis scaling
+        if self._has_ab_scale:
+            a = a / self._sa
+            b = b / self._sb
+        # 5b. Undo chroma power + L-dependent scaling
+        if self._has_cp:
+            C = torch.sqrt(a * a + b * b + 1e-30)
+            inv_scale = torch.ones_like(C)
+            if abs(self._ck) > 1e-10:
+                inv_scale = inv_scale * torch.exp(-self._ck * (L - 0.5))
+            if abs(self._cp - 1.0) > 1e-10:
+                C_after_k = C * inv_scale
+                if abs(self._cp_delta) > 1e-10:
+                    # Chroma-aware inverse: Newton iteration
+                    # Forward: C_new = C_orig * C_orig^(blend(C_orig)*(cp-1))
+                    # where blend(x) = x^2/(x^2+delta^2)
+                    C_orig = C_after_k.pow(1.0 / self._cp)  # initial guess
+                    delta2 = self._cp_delta * self._cp_delta
+                    for _ in range(20):
+                        bl = C_orig * C_orig / (C_orig * C_orig + delta2)
+                        eff_cp = 1.0 + bl * (self._cp - 1.0)
+                        f_val = C_orig.pow(eff_cp) - C_after_k
+                        # derivative: d/dC [C^(eff_cp)] = eff_cp * C^(eff_cp-1) + C^eff_cp * ln(C) * d(eff_cp)/dC
+                        # d(bl)/dC = 2*C*delta^2 / (C^2+delta^2)^2
+                        dbl = 2.0 * C_orig * delta2 / (C_orig * C_orig + delta2).pow(2)
+                        deff = dbl * (self._cp - 1.0)
+                        log_C = torch.log(C_orig.clamp(min=1e-30))
+                        df_val = eff_cp * C_orig.pow(eff_cp - 1.0) + C_orig.pow(eff_cp) * log_C * deff
+                        df_val = torch.where(df_val.abs() < 1e-15, torch.ones_like(df_val), df_val)
+                        C_orig = C_orig - f_val / df_val
+                        C_orig = C_orig.clamp(min=0)
+                    inv_scale = C_orig / C.clamp(min=1e-30)
+                else:
+                    C_orig = C_after_k.pow(1.0 / self._cp)
+                    inv_scale = C_orig / C.clamp(min=1e-30)
+            a = a * inv_scale
+            b = b * inv_scale
+
+        # 5. Undo chroma-preserving hue rotation (fixed-point iteration)
+        if self._has_hc:
+            c1, s1, c2, s2, c3, s3 = self._hc
+            a_orig, b_orig = a.clone(), b.clone()
+            for _ in range(150):
+                h = torch.atan2(b, a)
+                dh = (c1 * torch.cos(h) + s1 * torch.sin(h) +
+                      c2 * torch.cos(2*h) + s2 * torch.sin(2*h) +
+                      c3 * torch.cos(3*h) + s3 * torch.sin(3*h))
+                cd, sd = torch.cos(-dh), torch.sin(-dh)
+                a = a_orig * cd - b_orig * sd
+                b = a_orig * sd + b_orig * cd
+
+        # 4. Undo M2
+        raw = torch.stack([L, a, b], dim=-1)
+        lms_c = raw @ self._M2_inv.T
+        # 3. Undo transfer function
+        if self._transfer == "naka_rushton":
+            ax = torch.abs(lms_c).clamp(min=1e-30)
+            ratio = ax / (self._nr_s - ax).clamp(min=1e-30)
+            lms = torch.sign(lms_c) * self._nr_sigma * ratio.pow(1.0 / self._nr_n)
+        elif self._transfer == "power":
+            gamma = self._gamma_val
+            lms = torch.sign(lms_c) * lms_c.abs().pow(1.0 / gamma)
+        elif self._transfer == "cielab_delta":
+            delta = self._cielab_delta
+            kappa = self._cielab_kappa
+            ax = torch.abs(lms_c)
+            cube_val = ax.pow(3.0)
+            lin_val = (116.0 * ax - 16.0) / kappa
+            f_delta = (kappa * delta + 16.0) / 116.0
+            lms = torch.sign(lms_c) * torch.where(ax > f_delta, cube_val, lin_val)
+        elif self._transfer == "softcbrt":
+            eps = self._softcbrt_eps
+            eps_cbrt = eps ** (1.0 / 3.0)
+            ax = torch.abs(lms_c)
+            # inverse: x = (y + eps^(1/3))^3 - eps
+            lms = torch.sign(lms_c) * ((ax + eps_cbrt).pow(3.0) - eps)
+        else:
+            lms = torch.sign(lms_c) * lms_c.abs().pow(3.0)
+        # 2+1. Undo cross-term + M1 (analytical)
+        xyz = lms @ self._M1_mod_inv.T
+        return xyz
 
 
 class HueDep(ColorSpace):

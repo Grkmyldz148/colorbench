@@ -19,7 +19,7 @@ def _hsv_to_rgb(h, s, v):
     t = v * (1.0 - s * (1.0 - f))
     return [(v, t, p), (q, v, p), (p, v, t),
             (p, q, v), (t, p, v), (v, p, q)][i]
-_D65 = torch.tensor([0.95047, 1.0, 1.08883])
+_D65 = torch.tensor([0.95047, 1.0, 1.08883], dtype=torch.float64)
 _M_SRGB = torch.tensor([
     [0.4124564, 0.3575761, 0.1804375],
     [0.2126729, 0.7151522, 0.0721750],
@@ -907,4 +907,441 @@ def measure_perceptual_banding(space, device):
         "per_gradient": results,
         "total_invisible_pct": total_invisible / total_steps * 100,
         "total_duplicate_pct": sum(r["duplicate_rgb"] for r in results.values()) / total_steps * 100,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  21. INTERPOLATION OUT-OF-GAMUT EXCURSION
+# ═══════════════════════════════════════════════════════════════
+
+_M_REC2020 = torch.tensor([
+    [0.6369580483012914, 0.14461690358620832, 0.1688809751641721],
+    [0.2627002120112671, 0.6779980715188708, 0.05930171646986196],
+    [0.0, 0.028072693049087428, 1.0609850577107909],
+])
+
+
+def measure_oog_excursion(space, device):
+    """For in-gamut sRGB pairs, interpolate in Lab at 256 steps.
+    Check if any intermediate step maps to out-of-gamut sRGB.
+    Catches the OKLab blue-white purple shift issue.
+    """
+    ms = _to(_M_SRGB, device)
+    msi = torch.linalg.inv(ms)
+
+    # Build pair set: all 6 primaries + white + black + pastels + random
+    endpoints = []
+    # Primary→White (6)
+    primaries = [[1, 0, 0], [0, 1, 0], [0, 0, 1],
+                 [1, 1, 0], [0, 1, 1], [1, 0, 1]]
+    p_names = ["R", "G", "B", "Y", "C", "M"]
+    for i, (rgb, name) in enumerate(zip(primaries, p_names)):
+        endpoints.append((rgb, [1, 1, 1], f"{name}->W"))
+        endpoints.append((rgb, [0, 0, 0], f"{name}->K"))
+    # Complementary pairs
+    for i in range(3):
+        endpoints.append((primaries[i], primaries[i + 3], f"{p_names[i]}->{p_names[i+3]}"))
+    # Adjacent pairs
+    for i in range(6):
+        j = (i + 1) % 6
+        endpoints.append((primaries[i], primaries[j], f"{p_names[i]}->{p_names[j]}"))
+    # Pastels
+    for h_deg in range(0, 360, 30):
+        h = h_deg / 360.0
+        r1, g1, b1 = _hsv_to_rgb(h, 0.3, 0.9)
+        r2, g2, b2 = _hsv_to_rgb(((h_deg + 60) % 360) / 360.0, 0.3, 0.9)
+        endpoints.append(([r1, g1, b1], [r2, g2, b2], f"pastel_h{h_deg}"))
+    # Random (100)
+    import random as _rnd
+    _rnd.seed(99)
+    for k in range(100):
+        rgb1 = [_rnd.random(), _rnd.random(), _rnd.random()]
+        rgb2 = [_rnd.random(), _rnd.random(), _rnd.random()]
+        endpoints.append((rgb1, rgb2, f"rnd{k}"))
+
+    n_steps = 256
+    excursion_pairs = 0
+    max_oog_dist = 0.0
+    total_pairs = len(endpoints)
+    pair_details = []
+
+    for rgb1, rgb2, name in endpoints:
+        t1 = torch.tensor(rgb1, device=device, dtype=torch.float64)
+        t2 = torch.tensor(rgb2, device=device, dtype=torch.float64)
+        xyz1 = (_srgb_to_linear(t1) @ ms.T).unsqueeze(0)
+        xyz2 = (_srgb_to_linear(t2) @ ms.T).unsqueeze(0)
+        lab1 = space.forward(xyz1)[0]
+        lab2 = space.forward(xyz2)[0]
+
+        t = torch.linspace(0, 1, n_steps, device=device, dtype=torch.float64)
+        labs = lab1.unsqueeze(0) + t.unsqueeze(1) * (lab2 - lab1).unsqueeze(0)
+
+        xyz_interp = space.inverse(labs)
+        lin = xyz_interp @ msi.T  # linear sRGB, not clamped
+
+        # Check out-of-gamut: any channel < -0.001 or > 1.001
+        oog_low = (lin < -0.001).any(dim=1)
+        oog_high = (lin > 1.001).any(dim=1)
+        oog = oog_low | oog_high
+
+        if oog.any():
+            excursion_pairs += 1
+            # Max distance outside gamut
+            dist_low = (-lin).clamp(min=0).max().item()  # how far below 0
+            dist_high = (lin - 1.0).clamp(min=0).max().item()  # how far above 1
+            pair_max_dist = max(dist_low, dist_high)
+            max_oog_dist = max(max_oog_dist, pair_max_dist)
+            pair_details.append({
+                "pair": name,
+                "oog_steps": int(oog.sum().item()),
+                "max_oog_dist": pair_max_dist,
+            })
+
+    return {
+        "total_pairs": total_pairs,
+        "excursion_pairs": excursion_pairs,
+        "excursion_pct": excursion_pairs / total_pairs * 100,
+        "max_oog_dist": max_oog_dist,
+        "worst_pairs": sorted(pair_details, key=lambda x: -x["max_oog_dist"])[:10],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  22. HUE REVERSAL DETECTION
+# ═══════════════════════════════════════════════════════════════
+
+def measure_hue_reversal(space, device):
+    """For each hue (0-360), start from cusp and reduce chroma to 0.
+    At each step compute the output hue angle. If hue changes direction
+    (reversal), count it. Reports number of hues with reversals and max
+    reversal angle.
+    """
+    ms = _to(_M_SRGB, device)
+    msi = torch.linalg.inv(ms)
+    d65 = _to(_D65, device)
+
+    n_hues = 360
+    n_C_steps = 100
+    Cs = torch.linspace(0.001, 0.4, n_C_steps, device=device, dtype=torch.float64)
+
+    # First, find cusp L for each hue via a quick scan
+    n_L_scan = 100
+    n_C_scan = 80
+    Ls_scan = torch.linspace(0.05, 0.95, n_L_scan, device=device, dtype=torch.float64)
+    Cs_scan = torch.linspace(0.001, 0.45, n_C_scan, device=device, dtype=torch.float64)
+
+    cusp_L = torch.zeros(n_hues, device=device, dtype=torch.float64)
+
+    # Scan for cusp L in batches
+    for h_deg in range(n_hues):
+        h_rad = h_deg * 2 * PI / 360
+        ch = math.cos(h_rad)
+        sh = math.sin(h_rad)
+        Le = Ls_scan.view(n_L_scan, 1).expand(n_L_scan, n_C_scan).reshape(-1)
+        Ce = Cs_scan.view(1, n_C_scan).expand(n_L_scan, n_C_scan).reshape(-1)
+        lab = torch.stack([Le, Ce * ch, Ce * sh], dim=-1)
+        xyz = space.inverse(lab)
+        lin = xyz @ msi.T
+        ok = ((lin >= -0.002) & (lin <= 1.002)).all(dim=1).reshape(n_L_scan, n_C_scan)
+        cv = Cs_scan.view(1, n_C_scan).expand(n_L_scan, n_C_scan)
+        mc, _ = torch.where(ok, cv, torch.zeros_like(cv)).max(dim=1)
+        ci = mc.argmax()
+        cusp_L[h_deg] = Ls_scan[ci]
+
+    # Now check hue reversals: for each hue, reduce chroma from cusp C to 0
+    reversal_count = 0
+    max_reversal_angle = 0.0
+    per_hue_results = []
+
+    for h_deg in range(n_hues):
+        h_rad = h_deg * 2 * PI / 360
+        ch = math.cos(h_rad)
+        sh = math.sin(h_rad)
+        L_val = cusp_L[h_deg].item()
+
+        lab = torch.stack([
+            torch.full((n_C_steps,), L_val, device=device, dtype=torch.float64),
+            Cs * ch,
+            Cs * sh,
+        ], dim=-1)
+
+        xyz = space.inverse(lab)
+        # Filter to in-gamut points
+        lin = xyz @ msi.T
+        in_gamut = ((lin >= -0.01) & (lin <= 1.01)).all(dim=1)
+
+        if in_gamut.sum() < 3:
+            continue
+
+        xyz_valid = xyz[in_gamut].clamp(min=1e-10)
+        cielab = _xyz_to_cielab(xyz_valid, d65)
+
+        # Compute CIE Lab hue angles
+        C_star = (cielab[:, 1] ** 2 + cielab[:, 2] ** 2).sqrt()
+        chromatic = C_star > 1.0
+        if chromatic.sum() < 3:
+            continue
+
+        h_cielab = torch.atan2(cielab[chromatic, 2], cielab[chromatic, 1])
+
+        # Check for hue direction changes (reversals)
+        dh = h_cielab[1:] - h_cielab[:-1]
+        dh = torch.atan2(torch.sin(dh), torch.cos(dh))  # wrap to [-pi, pi]
+
+        if dh.numel() < 2:
+            continue
+
+        # Detect sign changes in dh (reversal)
+        signs = dh.sign()
+        # Remove zero signs
+        nonzero = signs != 0
+        if nonzero.sum() < 2:
+            continue
+        signs_nz = signs[nonzero]
+        sign_changes = (signs_nz[1:] * signs_nz[:-1] < 0).sum().item()
+
+        if sign_changes > 0:
+            reversal_count += 1
+            max_rev = dh.abs().max().item() * (180 / PI)
+            max_reversal_angle = max(max_reversal_angle, max_rev)
+            per_hue_results.append({
+                "hue": h_deg,
+                "n_reversals": int(sign_changes),
+                "max_angle": max_rev,
+            })
+
+    return {
+        "hues_with_reversals": reversal_count,
+        "max_reversal_angle": max_reversal_angle,
+        "total_hues_tested": n_hues,
+        "worst_hues": sorted(per_hue_results, key=lambda x: -x["max_angle"])[:10],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  23. NEAR-PRIMARY HUE DISCONTINUITY
+# ═══════════════════════════════════════════════════════════════
+
+def measure_primary_hue_discontinuity(space, device):
+    """For each sRGB/P3 primary, compute hue angle and compare to
+    nearby colors (+-0.01 in each RGB channel). Large hue jumps
+    indicate singularities near primaries.
+    """
+    ms = _to(_M_SRGB, device)
+    mp3 = _to(_M_P3, device)
+    d65 = _to(_D65, device)
+
+    # sRGB primaries + secondaries
+    srgb_primaries = {
+        "R": [1, 0, 0], "G": [0, 1, 0], "B": [0, 0, 1],
+        "C": [0, 1, 1], "M": [1, 0, 1], "Y": [1, 1, 0],
+    }
+    # P3 primaries
+    p3_primaries = {
+        "P3_R": [1, 0, 0], "P3_G": [0, 1, 0], "P3_B": [0, 0, 1],
+        "P3_C": [0, 1, 1], "P3_M": [1, 0, 1], "P3_Y": [1, 1, 0],
+    }
+
+    delta = 0.01
+    results = {}
+
+    for gamut_name, primaries, gamut_mat in [
+        ("sRGB", srgb_primaries, ms),
+        ("P3", p3_primaries, mp3),
+    ]:
+        for name, rgb in primaries.items():
+            rgb_t = torch.tensor(rgb, device=device, dtype=torch.float64)
+            xyz_center = (_srgb_to_linear(rgb_t) @ gamut_mat.T).unsqueeze(0)
+            lab_center = space.forward(xyz_center)[0]
+            h_center = math.atan2(lab_center[2].item(), lab_center[1].item())
+
+            # Perturbations: +- delta in each channel, clamped to [0,1]
+            max_jump = 0.0
+            for ch in range(3):
+                for sign in [-1, 1]:
+                    perturbed = rgb_t.clone()
+                    perturbed[ch] = (perturbed[ch] + sign * delta).clamp(0.0, 1.0)
+                    # Skip if perturbation didn't change anything (at boundary)
+                    if (perturbed == rgb_t).all():
+                        continue
+                    xyz_p = (_srgb_to_linear(perturbed) @ gamut_mat.T).unsqueeze(0)
+                    lab_p = space.forward(xyz_p)[0]
+                    C_p = (lab_p[1] ** 2 + lab_p[2] ** 2).sqrt().item()
+                    C_c = (lab_center[1] ** 2 + lab_center[2] ** 2).sqrt().item()
+                    # Only compare hue if both are chromatic
+                    if C_p > 0.01 and C_c > 0.01:
+                        h_p = math.atan2(lab_p[2].item(), lab_p[1].item())
+                        dh = abs(h_p - h_center)
+                        if dh > PI:
+                            dh = 2 * PI - dh
+                        dh_deg = dh * (180 / PI)
+                        max_jump = max(max_jump, dh_deg)
+
+            results[name] = {
+                "max_hue_jump_deg": max_jump,
+                "lab": [lab_center[0].item(), lab_center[1].item(), lab_center[2].item()],
+            }
+
+    # Summary stats
+    srgb_jumps = [v["max_hue_jump_deg"] for k, v in results.items() if not k.startswith("P3_")]
+    p3_jumps = [v["max_hue_jump_deg"] for k, v in results.items() if k.startswith("P3_")]
+
+    return {
+        "per_primary": results,
+        "srgb_max_jump": max(srgb_jumps) if srgb_jumps else 0.0,
+        "srgb_mean_jump": sum(srgb_jumps) / len(srgb_jumps) if srgb_jumps else 0.0,
+        "p3_max_jump": max(p3_jumps) if p3_jumps else 0.0,
+        "p3_mean_jump": sum(p3_jumps) / len(p3_jumps) if p3_jumps else 0.0,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  24. NEGATIVE LMS DETECTION
+# ═══════════════════════════════════════════════════════════════
+
+def measure_negative_lms(space, device):
+    """Convert 10,000 random sRGB colors through the space. Check if any
+    intermediate LMS values (after M1, before transfer function) are
+    negative. Spaces with proper LMS handling should have 0 negatives.
+    """
+    ms = _to(_M_SRGB, device)
+
+    # 10000 random sRGB colors
+    gen = torch.Generator(device=device).manual_seed(42)
+    srgb = torch.rand(10000, 3, generator=gen, device=device, dtype=torch.float64)
+    xyz = _srgb_to_linear(srgb) @ ms.T
+
+    # We need M1 from the space. Access it if available.
+    has_M1 = hasattr(space, 'M1') or hasattr(space, '_M1') or hasattr(space, '_M1_mod')
+
+    if not has_M1:
+        # Can't measure LMS for spaces without explicit M1 (e.g. CIELab)
+        return {
+            "n_negative": 0,
+            "max_negative": 0.0,
+            "pct_negative": 0.0,
+            "note": "Space has no M1 matrix (LMS check not applicable)",
+        }
+
+    # Get M1 matrix
+    if hasattr(space, '_M1_mod'):
+        M1 = space._M1_mod
+    elif hasattr(space, '_M1'):
+        M1 = space._M1
+    else:
+        M1 = space.M1
+
+    lms = xyz @ M1.T
+
+    # Count colors with any negative LMS
+    neg_mask = lms < 0
+    n_colors_with_neg = neg_mask.any(dim=1).sum().item()
+    max_neg = 0.0
+    if neg_mask.any():
+        max_neg = (-lms[neg_mask]).max().item()
+
+    # Per-channel stats
+    per_channel = {}
+    for ch, ch_name in enumerate(["L", "M", "S"]):
+        ch_neg = (lms[:, ch] < 0).sum().item()
+        ch_min = lms[:, ch].min().item()
+        per_channel[ch_name] = {
+            "n_negative": int(ch_neg),
+            "min_value": ch_min,
+        }
+
+    return {
+        "n_negative": int(n_colors_with_neg),
+        "max_negative": max_neg,
+        "pct_negative": n_colors_with_neg / 10000 * 100,
+        "per_channel": per_channel,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  25. EXTREME CHROMA STABILITY
+# ═══════════════════════════════════════════════════════════════
+
+def measure_extreme_chroma_stability(space, device):
+    """For P3 and Rec.2020 primaries, convert to Lab, add small
+    perturbations (+-0.001 in Lab), convert back to XYZ. Check if
+    round-trip is stable (no NaN, no huge jumps). Reports max
+    perturbation amplification factor.
+    """
+    ms = _to(_M_SRGB, device)
+    mp3 = _to(_M_P3, device)
+    mr2020 = _to(_M_REC2020, device)
+
+    # P3 and Rec.2020 primaries (encoded as linear RGB in their gamut)
+    test_colors = {}
+    for gname, gmat in [("P3", mp3), ("Rec2020", mr2020)]:
+        primaries = torch.eye(3, device=device, dtype=torch.float64)
+        # Linear primaries → XYZ
+        for i, pname in enumerate(["R", "G", "B"]):
+            xyz = (primaries[i] @ gmat.T).unsqueeze(0)
+            test_colors[f"{gname}_{pname}"] = xyz
+        # Also secondaries
+        secondaries = torch.tensor([
+            [1, 1, 0], [0, 1, 1], [1, 0, 1],
+        ], device=device, dtype=torch.float64)
+        for i, sname in enumerate(["Y", "C", "M"]):
+            xyz = (secondaries[i] @ gmat.T).unsqueeze(0)
+            test_colors[f"{gname}_{sname}"] = xyz
+
+    eps = 0.001  # perturbation size in Lab
+    max_amplification = 0.0
+    nan_count = 0
+    inf_count = 0
+    per_color = {}
+
+    for name, xyz_orig in test_colors.items():
+        lab = space.forward(xyz_orig)
+        lab_val = lab[0]
+
+        # 6 perturbation directions: +/- in each of L, a, b
+        perturbations = torch.zeros(6, 3, device=device, dtype=torch.float64)
+        perturbations[0, 0] = eps   # +L
+        perturbations[1, 0] = -eps  # -L
+        perturbations[2, 1] = eps   # +a
+        perturbations[3, 1] = -eps  # -a
+        perturbations[4, 2] = eps   # +b
+        perturbations[5, 2] = -eps  # -b
+
+        lab_perturbed = lab_val.unsqueeze(0) + perturbations  # (6, 3)
+
+        # Inverse perturbed → XYZ
+        xyz_perturbed = space.inverse(lab_perturbed)
+
+        # Check for NaN/Inf
+        n_nan = xyz_perturbed.isnan().sum().item()
+        n_inf = xyz_perturbed.isinf().sum().item()
+        nan_count += n_nan
+        inf_count += n_inf
+
+        if n_nan > 0 or n_inf > 0:
+            per_color[name] = {
+                "amplification": float("inf"),
+                "nan": int(n_nan),
+                "inf": int(n_inf),
+            }
+            continue
+
+        # Amplification: ||XYZ_perturbed - XYZ_orig|| / ||Lab_perturbed - Lab_orig||
+        # Measures sensitivity of the inverse at extreme chroma points
+        xyz_diff = (xyz_perturbed - xyz_orig).norm(dim=1)
+        lab_diff = perturbations.norm(dim=1)  # all eps
+        amp = xyz_diff / lab_diff.clamp(min=1e-15)
+        max_amp = amp.max().item()
+        max_amplification = max(max_amplification, max_amp)
+
+        per_color[name] = {
+            "amplification": max_amp,
+            "max_xyz_diff": xyz_diff.max().item(),
+        }
+
+    return {
+        "max_amplification": max_amplification,
+        "nan_count": int(nan_count),
+        "inf_count": int(inf_count),
+        "per_color": per_color,
     }

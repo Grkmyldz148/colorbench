@@ -12,7 +12,7 @@ import torch
 PI = math.pi
 
 # ── Color constants (moved to device lazily) ──
-_D65 = torch.tensor([0.95047, 1.0, 1.08883])
+_D65 = torch.tensor([0.95047, 1.0, 1.08883], dtype=torch.float64)
 
 _M_SRGB = torch.tensor([
     [0.4124564, 0.3575761, 0.1804375],
@@ -38,6 +38,7 @@ def _to(t, device):
 
 
 def _srgb_to_linear(c):
+    c = c.to(torch.float64)
     return torch.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055).pow(2.4))
 
 
@@ -95,10 +96,10 @@ def measure_roundtrip(space, device):
         end = min(start + chunk, 256 ** 3)
         n = end - start
         # Generate sRGB values
-        idx = torch.arange(start, end, device=device)
-        r = (idx // 65536) / 255.0
-        g = ((idx % 65536) // 256) / 255.0
-        b = (idx % 256) / 255.0
+        idx = torch.arange(start, end, device=device, dtype=torch.int64)
+        r = (idx // 65536).to(torch.float64) / 255.0
+        g = ((idx % 65536) // 256).to(torch.float64) / 255.0
+        b = (idx % 256).to(torch.float64) / 255.0
         srgb = torch.stack([r, g, b], dim=1)
         xyz = _srgb_to_linear(srgb) @ ms.T
 
@@ -434,7 +435,7 @@ def _scan_gamut(space, device, gamut_matrix, n_hues=360, n_L=150, n_C=120):
     return cusp_L, cusp_C, mc_all, Ls
 
 
-def measure_gamut(space, device, n_hues=360, n_L=150, n_C=120):
+def measure_gamut(space, device, n_hues=360, n_L=300, n_C=200):
     """Full gamut scan for sRGB, P3, Rec.2020."""
     ms = _to(_M_SRGB, device)
     mp3 = _to(_M_P3, device)
@@ -475,6 +476,29 @@ def measure_gamut(space, device, n_hues=360, n_L=150, n_C=120):
         # Gamut volume (fraction of L×C grid that's in-gamut)
         total_in_gamut = (mc_all > 0.001).float().mean().item()
 
+        # Boundary continuity — detect non-monotonic drops on the RISING edge
+        # (before cusp). A drop on the rising edge means the gamut boundary folds
+        # inward, creating spikes/holes visible in L-C gamut slices.
+        # mc_all shape: [n_hues, n_L]
+        mc_L_diff = mc_all[:, 1:] - mc_all[:, :-1]  # [n_hues, n_L-1] (signed)
+        idx_range = torch.arange(n_L - 1, device=device).unsqueeze(0)  # [1, n_L-1]
+        before_cusp = idx_range < ci_all.unsqueeze(1)  # [n_hues, n_L-1]
+        # On the rising edge, chroma should increase. A NEGATIVE diff is a fold.
+        rising_drops = (-mc_L_diff).clamp(min=0) * before_cusp.float()  # only drops before cusp
+        # Per-hue max drop (in C units)
+        boundary_drops_per_hue = rising_drops.max(dim=1).values  # [n_hues]
+        boundary_max_abs_jump = boundary_drops_per_hue.max().item()
+        boundary_mean_rel_jump = boundary_drops_per_hue.mean().item()
+        # Relative: normalize by cusp chroma of that hue
+        cusp_c_safe = cC.clamp(min=0.01)
+        boundary_rel_per_hue = boundary_drops_per_hue / cusp_c_safe
+        boundary_max_rel_jump = boundary_rel_per_hue.max().item()
+        # Count hues with >5% boundary fold relative to cusp chroma
+        boundary_bad_hues = (boundary_rel_per_hue > 0.05).sum().item()
+        # Worst hue
+        worst_hue_idx = boundary_rel_per_hue.argmax().item()
+        worst_hue_jump = boundary_rel_per_hue[worst_hue_idx].item()
+
         # Cusp anomaly detection — find cusp-drop zones
         anomalies = []
         cL_list = [cL_np[i].item() for i in range(n_hues)]
@@ -514,6 +538,12 @@ def measure_gamut(space, device, n_hues=360, n_L=150, n_C=120):
             "smoothness_mean_jump": all_jumps.mean().item(),
             "cliff_max": max_cliff,
             "volume_fraction": total_in_gamut,
+            "boundary_max_rel_jump": boundary_max_rel_jump,
+            "boundary_mean_rel_jump": boundary_mean_rel_jump,
+            "boundary_max_abs_jump": boundary_max_abs_jump,
+            "boundary_bad_hues": int(boundary_bad_hues),
+            "boundary_worst_hue": int(worst_hue_idx),
+            "boundary_worst_jump": worst_hue_jump,
             "anomalies": anomalies,
             "dead_zones": dead_zones,
             "cusps": [{"hue": i, "L": cL_np[i].item(), "C": cC_np[i].item()}
