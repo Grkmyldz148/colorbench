@@ -36,15 +36,49 @@ class ColorSpace(ABC):
         ...
 
 
+
 def _signed_cbrt(x: torch.Tensor) -> torch.Tensor:
     """Sign-preserving cube root: sign(x) * |x|^(1/3). Bijective, exact inverse."""
     return x.sign() * x.abs().pow(1.0 / 3.0)
 
 
 class OKLab(ColorSpace):
-    """Björn Ottosson's OKLab (2020). Bare M1→cbrt→M2, no enrichment."""
+    """Björn Ottosson's OKLab (2020) — 64-bit clean matrices from facelessuser.
+    ASTM E308 D65, zero 64-bit noise near zero. Bare M1→cbrt→M2, no enrichment."""
 
     name = "OKLab"
+
+    def __init__(self, device: torch.device):
+        # 64-bit clean XYZ→LMS (facelessuser, ASTM E308 D65)
+        self.M1 = torch.tensor([
+            [ 0.81898988960052209,  0.36189146695672597, -0.12886851374185956],
+            [ 0.03298391014473871,  0.92929408015501220,  0.03614494711728918],
+            [ 0.04818410922430736,  0.26427748543637186,  0.63363882724502550],
+        ], device=device, dtype=torch.float64)
+        # 64-bit clean LMS^(1/3)→OKLab
+        self.M2 = torch.tensor([
+            [ 0.21045426830931396,  0.79361777470230530, -0.00407204301161926],
+            [ 1.97799853243116860, -2.42859222042048580,  0.45059370961741140],
+            [ 0.02590404246554773,  0.78277171245752970, -0.80867575492307740],
+        ], device=device, dtype=torch.float64)
+        self.M1_inv = torch.linalg.inv(self.M1)
+        self.M2_inv = torch.linalg.inv(self.M2)
+
+    def forward(self, xyz):
+        lms = xyz @ self.M1.T
+        lms_c = _signed_cbrt(lms)
+        return lms_c @ self.M2.T
+
+    def inverse(self, lab):
+        lms_c = lab @ self.M2_inv.T
+        lms = torch.sign(lms_c) * lms_c.abs().pow(3.0)
+        return lms @ self.M1_inv.T
+
+
+class OKLab32(ColorSpace):
+    """OKLab with original 32-bit truncated matrices (for comparison)."""
+
+    name = "OKLab(32bit)"
 
     def __init__(self, device: torch.device):
         M1_srgb = torch.tensor([
@@ -587,6 +621,12 @@ class HelmCT(ColorSpace):
             self._cielab_kappa = d.get("cielab_kappa", 903.3)
         elif self._transfer == "softcbrt":
             self._softcbrt_eps = d.get("softcbrt_eps", 0.001)
+        elif self._transfer == "depcubic":
+            self._depcubic_alpha = d.get("depcubic_alpha", 0.015)
+        elif self._transfer == "rational":
+            self._rat_a = d.get("rational_a", 3.8)
+            self._rat_b = d.get("rational_b", 2.2)
+            self._rat_c = d.get("rational_c", 5.0)
 
         # Chroma-preserving hue rotation (Fourier 4 or 6)
         # Support both formats: "hue_correction" list OR individual "hue_cos1/sin1" fields
@@ -663,6 +703,96 @@ class HelmCT(ColorSpace):
         self._hue_L_width = d.get("hue_L_width", 2.0)
         self._has_hue_L = abs(self._hue_L_delta) > 1e-10
 
+        # L-gated hue enrichment: h' = h + amp * sin²(π(L-L_lo)/(L_hi-L_lo)) * gauss(h-center,σ)
+        enr = d.get("enrichment", None)
+        if enr and enr.get("type") == "L_gated_hue":
+            self._enr_amp = enr["amp"]
+            self._enr_center = np.radians(enr.get("center_deg", 240))
+            self._enr_sigma = enr.get("sigma", 0.7)
+            self._enr_L_lo = enr.get("L_lo", 0.37)
+            self._enr_L_hi = enr.get("L_hi", 1.0)
+            self._has_enr = abs(self._enr_amp) > 1e-10
+        else:
+            self._has_enr = False
+
+        # Pre-M1 XYZ warp: Y shift based on X/Z ratio (exactly invertible)
+        pw = d.get("pre_warp", None)
+        if pw:
+            self._pw_eps = pw["eps"]
+            # Red primary: X=0.4124, Z=0.0193 → X/Z ≈ 21.4
+            self._pw_xz_ratio = pw.get("xz_ratio", 21.4)
+            self._pw_sigma = pw.get("sigma", 5.0)
+            self._has_prewarp = abs(self._pw_eps) > 1e-10
+        else:
+            self._has_prewarp = False
+
+        # Chroma²-dependent a-offset (Red-White G-B fix)
+        c2a = d.get("c2a_offset", None)
+        if c2a:
+            self._c2a_beta = c2a["beta"]
+            self._c2a_center = np.radians(c2a.get("center_deg", 32.2))
+            self._c2a_sigma = c2a.get("sigma", 0.5)
+            self._has_c2a = abs(self._c2a_beta) > 1e-10
+        else:
+            self._has_c2a = False
+
+        # Neutral correction (NC): subtract achromatic error at each L level
+        self._has_nc = d.get("neutral_correction", False) or d.get("nc", False)
+        self._nc_built = False
+
+    def _build_nc_lut(self, device):
+        """Build NC LUT from sRGB grays — captures both pipeline and matrix rounding errors."""
+        ms = torch.tensor([
+            [0.4124564, 0.3575761, 0.1804375],
+            [0.2126729, 0.7151522, 0.0721750],
+            [0.0193339, 0.1191920, 0.9503041],
+        ], dtype=torch.float64, device=device)
+
+        def _srgb_gamma_inv(c):
+            return torch.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055).pow(2.4))
+
+        # sRGB grays: v from 0.001 to 0.999 (captures sRGB matrix row-sum rounding)
+        v_vals = torch.linspace(0.001, 0.999, 512, dtype=torch.float64, device=device)
+        lin = _srgb_gamma_inv(v_vals)  # (512,)
+        # XYZ = linear * ms @ [1,1,1]^T
+        ones = torch.ones(3, dtype=torch.float64, device=device)
+        row_sums = ms @ ones  # D65 ≈ [0.95047, 1.0, 1.08883] but with float rounding
+        gray_xyz = lin.unsqueeze(1) * row_sums.unsqueeze(0)  # (512, 3)
+
+        # Also add D65-proportional grays for HDR range
+        D65 = torch.tensor([0.95047, 1.0, 1.08883], dtype=torch.float64, device=device)
+        Y_hdr = torch.linspace(1.01, 2.0, 64, dtype=torch.float64, device=device)
+        hdr_xyz = Y_hdr.unsqueeze(1) * D65.unsqueeze(0)
+        all_xyz = torch.cat([gray_xyz, hdr_xyz], dim=0)
+
+        # Forward without NC
+        old_nc = self._has_nc
+        self._has_nc = False
+        lab = self.forward(all_xyz)
+        self._has_nc = old_nc
+
+        # Sort by L and deduplicate
+        L_vals = lab[:, 0]
+        order = L_vals.argsort()
+        self._nc_L = L_vals[order].contiguous()
+        self._nc_a = lab[order, 1].contiguous()
+        self._nc_b = lab[order, 2].contiguous()
+        self._nc_built = True
+
+    def _nc_error(self, L, device):
+        """Interpolate NC error at given L values."""
+        if not self._nc_built:
+            self._build_nc_lut(device)
+        # Linear interpolation
+        idx = torch.searchsorted(self._nc_L, L, right=True) - 1
+        idx = idx.clamp(0, len(self._nc_L) - 2)
+        L_lo = self._nc_L[idx]
+        L_hi = self._nc_L[idx + 1]
+        t = ((L - L_lo) / (L_hi - L_lo).clamp(min=1e-30)).clamp(0, 1)
+        a_err = self._nc_a[idx] + t * (self._nc_a[idx + 1] - self._nc_a[idx])
+        b_err = self._nc_b[idx] + t * (self._nc_b[idx + 1] - self._nc_b[idx])
+        return a_err, b_err
+
     def _pw_forward(self, L):
         """Piecewise-linear L correction: L_out = L + interp(shifts, L)."""
         # For each input L, find segment and interpolate
@@ -716,7 +846,38 @@ class HelmCT(ColorSpace):
                 + p[5] * (3 * t2 * dt * h + t3 * dh)
                 + p[6] * 4 * t3 * dt)
 
+    def _pre_m1_warp(self, xyz):
+        """Pre-M1 warp: shift Y based on X/Z ratio (EXACTLY invertible).
+
+        w = eps * exp(-(X/Z - X_red/Z_red)² / (2σ²))
+        Y' = Y + w  (only Y changes, X and Z unchanged)
+        Inverse: Y = Y' - w (same w because X,Z unchanged!)
+        """
+        if not self._has_prewarp:
+            return xyz
+        X, Z = xyz[:, 0:1], xyz[:, 2:3]
+        ratio = X / Z.clamp(min=1e-30)
+        dist2 = (ratio - self._pw_xz_ratio)**2
+        w = self._pw_eps * torch.exp(-dist2 / (2 * self._pw_sigma**2))
+        result = xyz.clone()
+        result[:, 1:2] = xyz[:, 1:2] + w
+        return result
+
+    def _pre_m1_unwarp(self, xyz):
+        """Inverse: EXACT (same formula, subtract instead of add)."""
+        if not self._has_prewarp:
+            return xyz
+        X, Z = xyz[:, 0:1], xyz[:, 2:3]
+        ratio = X / Z.clamp(min=1e-30)
+        dist2 = (ratio - self._pw_xz_ratio)**2
+        w = self._pw_eps * torch.exp(-dist2 / (2 * self._pw_sigma**2))
+        result = xyz.clone()
+        result[:, 1:2] = xyz[:, 1:2] - w
+        return result
+
     def forward(self, xyz):
+        # 0. Pre-M1 warp
+        xyz = self._pre_m1_warp(xyz)
         # 1. M1
         lms = xyz @ self._M1.T
         # 2. Cross-terms
@@ -746,8 +907,34 @@ class HelmCT(ColorSpace):
             eps = self._softcbrt_eps
             ax = torch.abs(lms)
             lms_c = torch.sign(lms) * ((ax + eps).pow(1.0 / 3.0) - eps ** (1.0 / 3.0))
+        elif self._transfer == "depcubic":
+            alpha = self._depcubic_alpha
+            s = (alpha / 3) ** 0.5
+            t = lms / (2 * s**3)
+            y = 2 * s * torch.sinh(torch.arcsinh(t) / 3)
+            # Halley refinement for machine precision
+            f = y**3 + alpha * y - lms
+            fp = 3 * y**2 + alpha
+            fpp = 6 * y
+            denom = 2 * fp * fp - f * fpp
+            safe = denom.abs() > 1e-30
+            lms_c = torch.where(safe, y - 2 * f * fp / torch.where(safe, denom, torch.ones_like(denom)), y)
+        elif self._transfer == "rational":
+            # f(x) = x·(a + b·x) / (1 + c·x), sign-preserving
+            a, b, c = self._rat_a, self._rat_b, self._rat_c
+            ax = torch.abs(lms)
+            lms_c = torch.sign(lms) * ax * (a + b * ax) / (1.0 + c * ax)
         else:
             lms_c = torch.sign(lms) * torch.abs(lms).pow(1.0 / 3.0)
+        # 3.5 Smooth neutral blend: branchless correction for sRGB matrix rounding
+        # Blends LMS_c toward channel mean with weight proportional to how neutral the input is
+        # Weight = exp(-spread²/σ²) where spread = (max-min)/mean, σ = 1e-5
+        # At exact neutral: weight≈1 (full correction). At chromatic: weight≈0 (no effect)
+        # C∞ smooth — no branching, no discontinuity
+        lms_mean = lms_c.mean(dim=1, keepdim=True)
+        lms_spread = (lms_c.max(dim=1).values - lms_c.min(dim=1).values) / lms_mean.squeeze().abs().clamp(min=1e-30)
+        blend_w = torch.exp(-(lms_spread / 1e-5).pow(2)).unsqueeze(1)
+        lms_c = lms_c + blend_w * (lms_mean.expand_as(lms_c) - lms_c)
         # 4. M2
         raw = lms_c @ self._M2.T
         L, a, b = raw[:, 0], raw[:, 1], raw[:, 2]
@@ -803,10 +990,67 @@ class HelmCT(ColorSpace):
         elif self._has_lc:
             t = L * (1.0 - L)
             L = L + self._lc[0]*t + self._lc[1]*t*(2*L-1) + self._lc[2]*t*t
+        # 7. L-gated hue enrichment
+        if self._has_enr:
+            C = torch.sqrt(a * a + b * b + 1e-30)
+            h = torch.atan2(b, a)
+            # Gate: sin²(π(L-L_lo)/(L_hi-L_lo)), 0 outside [L_lo, L_hi]
+            t_gate = (L - self._enr_L_lo) / (self._enr_L_hi - self._enr_L_lo)
+            t_gate = t_gate.clamp(0, 1)
+            gate = torch.sin(np.pi * t_gate).pow(2)
+            # Gaussian at target hue
+            dh = h - self._enr_center
+            dh = (dh + np.pi) % (2 * np.pi) - np.pi
+            gauss = torch.exp(-0.5 * (dh / self._enr_sigma).pow(2))
+            rotation = self._enr_amp * gate * gauss
+            h_new = h + rotation
+            a = C * torch.cos(h_new)
+            b = C * torch.sin(h_new)
+        # 7b. (disabled — C²a offset causes OOG regression)
+        # 8. Neutral correction (NC)
+        if self._has_nc:
+            a_err, b_err = self._nc_error(L, L.device)
+            a = a - a_err
+            b = b - b_err
         return torch.stack([L, a, b], dim=-1)
 
     def inverse(self, lab):
         L_out, a, b = lab[:, 0].clone(), lab[:, 1].clone(), lab[:, 2].clone()
+
+        # 8. Undo NC
+        if self._has_nc:
+            a_err, b_err = self._nc_error(L_out, L_out.device)
+            a = a + a_err
+            b = b + b_err
+
+        # 7b. (disabled — C²a offset inverse removed)
+        # 7. Undo L-gated hue enrichment (Halley iteration — cubic convergence)
+        if self._has_enr:
+            C = torch.sqrt(a * a + b * b + 1e-30)
+            h_target = torch.atan2(b, a)
+            t_gate = (L_out - self._enr_L_lo) / (self._enr_L_hi - self._enr_L_lo)
+            t_gate = t_gate.clamp(0, 1)
+            gate = torch.sin(np.pi * t_gate).pow(2)
+            sig2 = self._enr_sigma ** 2
+            # Halley: find h such that F(h) = h + amp*gate*gauss(h-center) - h_target = 0
+            h = h_target.clone()
+            for _ in range(8):  # Halley converges cubically — 8 is plenty
+                dh = h - self._enr_center
+                dh = (dh + np.pi) % (2 * np.pi) - np.pi
+                gauss = torch.exp(-0.5 * (dh / self._enr_sigma).pow(2))
+                ag = self._enr_amp * gate
+                # F, F', F''
+                F = h + ag * gauss - h_target
+                dg = gauss * (-dh / sig2)
+                Fp = 1.0 + ag * dg
+                ddg = gauss * (-1.0 / sig2 + dh * dh / (sig2 * sig2))
+                Fpp = ag * ddg
+                # Halley step: h -= 2*F*Fp / (2*Fp² - F*Fpp)
+                denom = 2.0 * Fp * Fp - F * Fpp
+                denom = torch.where(denom.abs() < 1e-30, torch.ones_like(denom), denom)
+                h = h - 2.0 * F * Fp / denom
+            a = C * torch.cos(h)
+            b = C * torch.sin(h)
 
         # 6. Undo L_corr
         L = L_out.clone()
@@ -907,6 +1151,11 @@ class HelmCT(ColorSpace):
         # 4. Undo M2
         raw = torch.stack([L, a, b], dim=-1)
         lms_c = raw @ self._M2_inv.T
+        # 3.5 Smooth neutral blend (matching forward — C∞, branchless)
+        lms_mean = lms_c.mean(dim=1, keepdim=True)
+        lms_spread = (lms_c.max(dim=1).values - lms_c.min(dim=1).values) / lms_mean.squeeze().abs().clamp(min=1e-30)
+        blend_w = torch.exp(-(lms_spread / 1e-5).pow(2)).unsqueeze(1)
+        lms_c = lms_c + blend_w * (lms_mean.expand_as(lms_c) - lms_c)
         # 3. Undo transfer function
         if self._transfer == "naka_rushton":
             ax = torch.abs(lms_c).clamp(min=1e-30)
@@ -927,12 +1176,23 @@ class HelmCT(ColorSpace):
             eps = self._softcbrt_eps
             eps_cbrt = eps ** (1.0 / 3.0)
             ax = torch.abs(lms_c)
-            # inverse: x = (y + eps^(1/3))^3 - eps
             lms = torch.sign(lms_c) * ((ax + eps_cbrt).pow(3.0) - eps)
+        elif self._transfer == "depcubic":
+            alpha = self._depcubic_alpha
+            lms = lms_c**3 + alpha * lms_c
+        elif self._transfer == "rational":
+            # Inverse: bx² + (a-cy)x - y = 0 → quadratic formula
+            a, b, c = self._rat_a, self._rat_b, self._rat_c
+            ay = lms_c.abs()
+            disc = (a - c * ay)**2 + 4.0 * b * ay
+            disc = disc.clamp(min=0.0)
+            lms = torch.sign(lms_c) * (-(a - c * ay) + torch.sqrt(disc)) / (2.0 * b)
         else:
             lms = torch.sign(lms_c) * lms_c.abs().pow(3.0)
         # 2+1. Undo cross-term + M1 (analytical)
         xyz = lms @ self._M1_mod_inv.T
+        # 0. Undo pre-M1 warp
+        xyz = self._pre_m1_unwarp(xyz)
         return xyz
 
 

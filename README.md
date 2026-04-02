@@ -2,7 +2,7 @@
 
 A rigorous, GPU-accelerated benchmark for comparing perceptual color spaces.
 
-46 metrics across 8 categories. 3038 gradient pairs spanning sRGB, Display P3, and Rec.2020 gamuts. Fully deterministic, reproducible, and documented — including its own limitations.
+83 metrics across 12 categories. 3038 gradient pairs spanning sRGB, Display P3, and Rec.2020 gamuts. Fully deterministic, reproducible, and documented — including its own limitations.
 
 ## Why
 
@@ -27,18 +27,22 @@ python run.py oklab genspace --json path/to/params.json
 
 ## What It Measures
 
-### 46 Metrics in 8 Categories
+### 83 Metrics in 12 Categories
 
-| Category | Metrics | What It Tests |
-|----------|---------|---------------|
-| **Gradient Quality** (6) | CV mean/p95/max, hue drift, banding, 3-color CV | How uniform are color transitions? |
-| **Numerical Stability** (5) | Round-trip (16.7M colors), 1000-trip accumulation, 8-bit quantization, channel monotonicity, Jacobian condition | Does the math work? |
-| **Achromatic Fidelity** (2) | Gray ramp chroma (sRGB + pure D65) | Do grays stay gray? |
-| **Gamut Geometry** (7) | Cusp positions, monotonicity, cliff steepness, smoothness, volume fill (sRGB/P3/Rec.2020) | Is the gamut boundary well-behaved? |
-| **Hue Properties** (4) | Hue RMS, primary L range, hue leaf constancy, hue agreement with CIE Lab | Are hue angles correct? |
-| **Perceptual Uniformity** (4) | Munsell Value/Hue spacing, MacAdam ellipse isotropy, blue-white/red-white midpoints | Does equal distance mean equal perception? |
-| **Application Scenarios** (8) | Palette L* spacing, tint/shade hue, data viz distinguishability, multi-stop gradient, WCAG contrast, harmony accuracy, photo gamut mapping, eased animation | Does it work in real design tasks? |
-| **Accessibility** (2) | CVD simulation (protan/deutan) gradient dE | Is it usable for color blind users? |
+| Category | Count | What It Tests |
+|----------|-------|---------------|
+| **Gamut Geometry** | 27 | Cusps, monotonicity, cliff, smoothness, boundary continuity, invalid cusps, bad hues — across sRGB, P3, and Rec.2020 |
+| **Gradient Quality** | 10 | CV mean/p95/max, hue drift, banding, 3-color CV, subset CVs (bright, dark, high-chroma, cross-lightness, near-achromatic) |
+| **Application** | 12 | Palette L* spacing, tint/shade hue, data viz, multi-stop gradient, WCAG contrast, harmony accuracy, photo gamut mapping, eased animation, shade palette |
+| **Perceptual Accuracy** | 5 | Munsell Value/Hue spacing, MacAdam ellipse isotropy, hue leaf constancy, CIE Lab hue agreement |
+| **Numerical Stability** | 3 | Round-trip precision across 16.7M colors (sRGB, P3, Rec.2020) |
+| **Structural** | 8 | OOG excursion, hue reversals, primary hue discontinuity, negative LMS, extreme chroma amplification |
+| **Advanced** | 6 | 1000-trip RT accumulation, 8-bit quantization, channel monotonicity, Jacobian condition, cross-gamut consistency |
+| **Hue** | 2 | Hue RMS, primary L range |
+| **Achromatic** | 2 | Gray ramp chroma (sRGB + pure D65) |
+| **Special** | 3 | Blue-white midpoint G/R, red-white midpoint, yellow chroma |
+| **Banding** | 2 | Invisible gradient steps, duplicate 8-bit steps |
+| **Accessibility** | 2 | CVD simulation (protan/deutan) gradient dE |
 
 ### 3038 Gradient Pairs
 
@@ -82,15 +86,15 @@ ColorBench documents its own biases. Every JSON report includes a `_methodology`
 
 ```
 colorbench/
-  run.py                          # CLI runner (32 test functions + compare)
+  run.py                          # CLI runner (39 test functions + compare)
   core/
-    spaces.py                     # 7 space implementations (single source of truth)
+    spaces.py                     # 8 space implementations (single source of truth)
     pairs.py                      # 3038 gradient pair generator (deterministic)
-    gpu_metrics.py                # 8 core metrics (round-trip, gradient, gamut, etc.)
-    gpu_metrics_advanced.py       # 12 advanced metrics (CVD, animation, Jacobian, etc.)
-    gpu_metrics_perceptual.py     # 12 perceptual/application metrics (Munsell, MacAdam, etc.)
+    gpu_metrics.py                # Core metrics (round-trip, gradient, gamut, etc.)
+    gpu_metrics_advanced.py       # Advanced metrics (CVD, animation, Jacobian, etc.)
+    gpu_metrics_perceptual.py     # Perceptual/application metrics (Munsell, MacAdam, etc.)
     constants.py                  # Hardcoded data (Munsell, MacAdam, WCAG — zero file deps)
-    comparison.py                 # 46 METRIC_DEFS + winner logic + head-to-head
+    comparison.py                 # 83 METRIC_DEFS + winner logic + head-to-head
     html_report.py                # HTML report generator
     report.py                     # JSON + terminal output
 ```

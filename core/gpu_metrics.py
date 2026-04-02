@@ -392,6 +392,27 @@ def measure_gradients(space, pairs_xyz, pair_labels, device, n_steps=26):
         "banding_max": int(banding.max().item()),
     }
 
+    # Subset gradient CVs — measure uniformity in specific pair categories
+    # Uses Lab coordinates from the space being tested for filtering
+    lab1_all = space.forward(pairs_xyz[:, 0])
+    lab2_all = space.forward(pairs_xyz[:, 1])
+    L1_all = lab1_all[:, 0]
+    L2_all = lab2_all[:, 0]
+    C1_all = (lab1_all[:, 1]**2 + lab1_all[:, 2]**2).sqrt()
+    C2_all = (lab2_all[:, 1]**2 + lab2_all[:, 2]**2).sqrt()
+
+    subsets = {
+        "bright": (L1_all > 0.6) & (L2_all > 0.6),
+        "dark": (L1_all < 0.4) & (L2_all < 0.4),
+        "high_chroma": (C1_all > 0.15) & (C2_all > 0.15),
+        "cross_lightness": (L1_all - L2_all).abs() > 0.5,
+        "near_achromatic": (C1_all < 0.05) | (C2_all < 0.05),
+    }
+    for sname, smask in subsets.items():
+        sub_cv = cvs[smask]
+        sub_valid = sub_cv[sub_cv > 0]
+        overall[f"cv_{sname}"] = sub_valid.mean().item() if sub_valid.numel() > 0 else 0
+
     return {"overall": overall, "by_category": cat_stats, "pairs": pair_results}
 
 

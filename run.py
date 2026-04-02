@@ -24,7 +24,7 @@ import torch
 
 torch.set_default_dtype(torch.float64)
 
-from core.spaces import OKLab, CIELab, GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched, GenSpaceBlueFix, NonlinearM1, HelmCT
+from core.spaces import OKLab, OKLab32, CIELab, GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched, GenSpaceBlueFix, NonlinearM1, HelmCT
 from core.pairs import generate_all_pairs
 from core.gpu_metrics import (
     measure_roundtrip,
@@ -87,6 +87,8 @@ def build_space(space_arg, json_path, device):
     s = space_arg.lower()
     if s == "oklab":
         return OKLab(device)
+    elif s == "oklab32":
+        return OKLab32(device)
     elif s == "cielab":
         return CIELab(device)
     elif s == "genspace":

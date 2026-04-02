@@ -18,6 +18,7 @@ class MetricDef:
     unit: str             # Display unit (%, deg, ratio, dE, etc.)
     lower_is_better: bool # Direction
     format_str: str = ""  # Optional format string (e.g. ".2e", ".1f")
+    abs_tie: float = 0.0  # Absolute TIE threshold (0 = use relative only)
 
 
 @dataclass
@@ -52,9 +53,9 @@ METRIC_DEFS = [
     MetricDef("roundtrip", "srgb_full_16M.max_error",
               "Round-trip sRGB 16.7M", "Numerical", "", True, ".2e"),
     MetricDef("roundtrip", "p3_full_16M.max_error",
-              "Round-trip P3 16.7M", "Numerical", "", True, ".2e"),
+              "Round-trip P3 16.7M", "Numerical", "", True, ".2e", 1e-13),
     MetricDef("roundtrip", "rec2020_2M_uniform.max_error",
-              "Round-trip Rec2020 2.1M", "Numerical", "", True, ".2e"),
+              "Round-trip Rec2020 2.1M", "Numerical", "", True, ".2e", 1e-13),
     # Note: condition numbers come from jacobian, not stability
     # Stability has perturbation + near_black/near_white
 
@@ -76,6 +77,18 @@ METRIC_DEFS = [
     MetricDef("gradients", "overall.cv_max",
               "Worst-case gradient CV", "Gradient", "%", True, ".1f"),
 
+    # ── Gradient Subsets ──
+    MetricDef("gradients", "overall.cv_bright",
+              "Bright gradient CV (L>0.6)", "Gradient", "%", True, ".2f"),
+    MetricDef("gradients", "overall.cv_dark",
+              "Dark gradient CV (L<0.4)", "Gradient", "%", True, ".2f"),
+    MetricDef("gradients", "overall.cv_high_chroma",
+              "High-chroma gradient CV", "Gradient", "%", True, ".2f"),
+    MetricDef("gradients", "overall.cv_cross_lightness",
+              "Cross-lightness gradient CV", "Gradient", "%", True, ".2f"),
+    MetricDef("gradients", "overall.cv_near_achromatic",
+              "Near-achromatic gradient CV", "Gradient", "%", True, ".2f"),
+
     # ── Hue ──
     MetricDef("hue", "hue_rms",
               "Hue RMS", "Hue", "deg", True, ".1f"),
@@ -91,6 +104,48 @@ METRIC_DEFS = [
               "Gamut volume fill", "Gamut", "%", False, ".1f"),
     MetricDef("gamut", "P3.valid_cusps",
               "P3 valid cusps", "Gamut", "/360", False, "d"),
+    MetricDef("gamut", "P3.monotonicity_violations",
+              "P3 mono violations", "Gamut", "", True, "d"),
+    MetricDef("gamut", "P3.cliff_max",
+              "P3 cliff max", "Gamut", "%", True, ".1f"),
+    MetricDef("gamut", "Rec2020.monotonicity_violations",
+              "Rec2020 mono violations", "Gamut", "", True, "d"),
+    MetricDef("gamut", "Rec2020.cliff_max",
+              "Rec2020 cliff max", "Gamut", "%", True, ".1f"),
+    MetricDef("gamut", "P3.smoothness_max_jump",
+              "P3 cusp smoothness", "Gamut", "", True, ".3f"),
+    MetricDef("gamut", "Rec2020.smoothness_max_jump",
+              "Rec2020 cusp smoothness", "Gamut", "", True, ".3f"),
+    MetricDef("gamut", "P3.anomalies",
+              "P3 gamut anomalies", "Gamut", "", True, "d"),
+    MetricDef("gamut", "Rec2020.anomalies",
+              "Rec2020 gamut anomalies", "Gamut", "", True, "d"),
+    MetricDef("gamut", "P3.dead_zones",
+              "P3 dead zones", "Gamut", "", True, "d"),
+    MetricDef("gamut", "Rec2020.dead_zones",
+              "Rec2020 dead zones", "Gamut", "", True, "d"),
+    MetricDef("gamut", "sRGB.invalid_cusps",
+              "sRGB invalid cusps", "Gamut", "", True, "d"),
+    MetricDef("gamut", "P3.invalid_cusps",
+              "P3 invalid cusps", "Gamut", "", True, "d"),
+    MetricDef("gamut", "sRGB.smoothness_mean_jump",
+              "sRGB cusp mean smoothness", "Gamut", "", True, ".4f"),
+    MetricDef("gamut", "sRGB.boundary_bad_hues",
+              "sRGB boundary bad hues", "Gamut", "", True, "d"),
+    MetricDef("gamut", "P3.boundary_bad_hues",
+              "P3 boundary bad hues", "Gamut", "", True, "d"),
+    MetricDef("gamut", "Rec2020.boundary_bad_hues",
+              "Rec2020 boundary bad hues", "Gamut", "", True, "d"),
+    MetricDef("gamut", "P3.smoothness_mean_jump",
+              "P3 cusp mean smoothness", "Gamut", "", True, ".4f"),
+    MetricDef("gamut", "Rec2020.smoothness_mean_jump",
+              "Rec2020 cusp mean smoothness", "Gamut", "", True, ".4f"),
+    MetricDef("gamut", "sRGB.boundary_mean_rel_jump",
+              "sRGB boundary mean jump", "Gamut", "", True, ".4f"),
+    MetricDef("gamut", "P3.boundary_mean_rel_jump",
+              "P3 boundary mean jump", "Gamut", "", True, ".4f"),
+    MetricDef("gamut", "Rec2020.boundary_mean_rel_jump",
+              "Rec2020 boundary mean jump", "Gamut", "", True, ".4f"),
 
     # ── Special Gradients ──
     MetricDef("specials", "yellow_chroma",
@@ -281,11 +336,16 @@ def _is_self_referential(space_name: str, metric_name: str, score: float,
     min_other = min(other_scores)
 
     # Primary: score essentially zero while others are meaningfully higher
-    if abs(score) < 1e-6 and min_other > 0.1:
-        return True
-    # Secondary: score very small (< 0.01) and ratio to closest competitor > 10x
-    if abs(score) < 0.01 and min_other > 0.1:
-        return True
+    # BUT only for metrics where zero is "suspicious" (hue agreement, harmony)
+    # NOT for metrics where zero is a genuine achievement (violations, errors)
+    is_violation_metric = any(kw in metric_name.lower() for kw in
+                              ["violation", "nan", "inf", "negative", "error", "excursion",
+                               "invalid", "cliff", "holes", "anomal", "dead", "bad hues"])
+    if not is_violation_metric:
+        if abs(score) < 1e-6 and min_other > 0.1:
+            return True
+        if abs(score) < 0.01 and min_other > 0.1:
+            return True
 
     # Gamut tests: CIE Lab L range [0,100] vs scanner [0,1] → 0 cusps always.
     # CIE Lab's gamut scores are structurally incomparable.
@@ -341,11 +401,15 @@ def compare_spaces(results_by_space: dict) -> Comparison:
             best_val = max(fair_scores.values())
 
         # Check for ties (within tolerance)
+        # Use absolute tolerance if defined, otherwise relative
         winners = []
         for sname, score in fair_scores.items():
             if best_val == 0:
-                if score == 0:
+                if score == 0 or (mdef.abs_tie > 0 and abs(score) <= mdef.abs_tie):
                     winners.append(sname)
+            elif mdef.abs_tie > 0 and abs(score - best_val) <= mdef.abs_tie:
+                # Absolute tolerance: both within machine precision
+                winners.append(sname)
             else:
                 rel_diff = abs(score - best_val) / (abs(best_val) + 1e-30)
                 if rel_diff <= TIE_TOLERANCE:
@@ -390,36 +454,38 @@ def compare_spaces(results_by_space: dict) -> Comparison:
                 if s1 in tr.ref_spaces or s2 in tr.ref_spaces:
                     continue
 
-                if tr.metric.lower_is_better:
+                # Check absolute tie first (same logic as solo winner)
+                abs_diff = abs(sc1 - sc2)
+                if tr.metric.abs_tie > 0 and abs_diff <= tr.metric.abs_tie:
+                    tie += 1
+                elif sc1 == sc2:
+                    tie += 1
+                elif tr.metric.lower_is_better:
                     if sc1 < sc2:
-                        rel = abs(sc2 - sc1) / (abs(sc2) + 1e-30) if sc2 != 0 else (0 if sc1 == 0 else 1)
+                        rel = abs_diff / (abs(sc2) + 1e-30) if sc2 != 0 else (0 if sc1 == 0 else 1)
                         if rel > TIE_TOLERANCE:
                             w1 += 1
                         else:
                             tie += 1
-                    elif sc2 < sc1:
-                        rel = abs(sc1 - sc2) / (abs(sc1) + 1e-30) if sc1 != 0 else (0 if sc2 == 0 else 1)
+                    else:
+                        rel = abs_diff / (abs(sc1) + 1e-30) if sc1 != 0 else (0 if sc2 == 0 else 1)
                         if rel > TIE_TOLERANCE:
                             w2 += 1
                         else:
                             tie += 1
-                    else:
-                        tie += 1
                 else:
                     if sc1 > sc2:
-                        rel = abs(sc1 - sc2) / (abs(sc1) + 1e-30) if sc1 != 0 else (0 if sc2 == 0 else 1)
+                        rel = abs_diff / (abs(sc1) + 1e-30) if sc1 != 0 else (0 if sc2 == 0 else 1)
                         if rel > TIE_TOLERANCE:
                             w1 += 1
                         else:
                             tie += 1
-                    elif sc2 > sc1:
-                        rel = abs(sc2 - sc1) / (abs(sc2) + 1e-30) if sc2 != 0 else (0 if sc1 == 0 else 1)
+                    else:
+                        rel = abs_diff / (abs(sc2) + 1e-30) if sc2 != 0 else (0 if sc1 == 0 else 1)
                         if rel > TIE_TOLERANCE:
                             w2 += 1
                         else:
                             tie += 1
-                    else:
-                        tie += 1
 
             h2h[(s1, s2)] = {"w1": w1, "w2": w2, "tie": tie}
 
