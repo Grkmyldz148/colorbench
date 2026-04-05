@@ -95,7 +95,7 @@ def build_space(space_arg, json_path, device):
         if not json_path:
             print("Error: genspace requires --json path", file=sys.stderr)
             sys.exit(1)
-        return GenSpaceAdapter(json_path, device)
+        return HelmCT(json_path, device)
     elif s == "genenriched":
         if not json_path:
             print("Error: genenriched requires --json path", file=sys.stderr)
