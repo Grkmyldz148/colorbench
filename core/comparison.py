@@ -256,6 +256,22 @@ METRIC_DEFS = [
               "Negative LMS colors", "Structural", "%", True, ".2f"),
     MetricDef("extreme_chroma_stab", "max_amplification",
               "Extreme chroma amplification", "Structural", "x", True, ".2f"),
+
+    # ── Independent Third-Party Benchmarks ──
+    MetricDef("hung_berns", "mean_mad_deg",
+              "Hung-Berns hue linearity (mean)", "Independent", "deg", True, ".2f"),
+    MetricDef("hung_berns", "max_deviation_deg",
+              "Hung-Berns hue linearity (max)", "Independent", "deg", True, ".1f"),
+    MetricDef("ebner_fairchild", "mean_mad_deg",
+              "Ebner-Fairchild hue surfaces (mean)", "Independent", "deg", True, ".2f"),
+    MetricDef("ebner_fairchild", "max_deviation_deg",
+              "Ebner-Fairchild hue surfaces (max)", "Independent", "deg", True, ".1f"),
+    MetricDef("pointer_gamut", "chroma_cv",
+              "Pointer gamut chroma isotropy", "Independent", "", True, ".3f"),
+    MetricDef("pointer_gamut", "boundary_smoothness",
+              "Pointer gamut boundary smoothness", "Independent", "", True, ".3f"),
+    MetricDef("pointer_gamut", "hue_uniformity_cv",
+              "Pointer gamut hue uniformity", "Independent", "", True, ".3f"),
 ]
 
 

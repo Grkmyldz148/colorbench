@@ -30,7 +30,9 @@ def compile_report(space_name, device_name, results):
                 "shade_hue_consistency", "chroma_preservation",
                 # Structural (Faz 3)
                 "oog_excursion", "hue_reversal", "primary_hue_disc",
-                "negative_lms", "extreme_chroma_stab"]:
+                "negative_lms", "extreme_chroma_stab",
+                # Independent third-party (Faz 4)
+                "hung_berns", "ebner_fairchild", "pointer_gamut"]:
         if key in results:
             report[key] = results[key]
 

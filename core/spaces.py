@@ -697,6 +697,9 @@ class HelmCT(ColorSpace):
         self._sb = d.get("scale_b", 1.0)
         self._has_ab_scale = abs(self._sa - 1.0) > 1e-10 or abs(self._sb - 1.0) > 1e-10
 
+        # Neutral blend opt-out (default True preserves existing v0.11.1 behavior)
+        self._neutral_blend = d.get("neutral_blend", True)
+
         # Hue-dependent L correction: L -= delta * max(0, cos(h - center))^width
         self._hue_L_delta = d.get("hue_L_delta", 0.0)
         self._hue_L_center = d.get("hue_L_center", -1.5708)  # -π/2 = blue
@@ -931,10 +934,11 @@ class HelmCT(ColorSpace):
         # Weight = exp(-spread²/σ²) where spread = (max-min)/mean, σ = 1e-5
         # At exact neutral: weight≈1 (full correction). At chromatic: weight≈0 (no effect)
         # C∞ smooth — no branching, no discontinuity
-        lms_mean = lms_c.mean(dim=1, keepdim=True)
-        lms_spread = (lms_c.max(dim=1).values - lms_c.min(dim=1).values) / lms_mean.squeeze().abs().clamp(min=1e-30)
-        blend_w = torch.exp(-(lms_spread / 1e-5).pow(2)).unsqueeze(1)
-        lms_c = lms_c + blend_w * (lms_mean.expand_as(lms_c) - lms_c)
+        if self._neutral_blend:
+            lms_mean = lms_c.mean(dim=1, keepdim=True)
+            lms_spread = (lms_c.max(dim=1).values - lms_c.min(dim=1).values) / lms_mean.squeeze().abs().clamp(min=1e-30)
+            blend_w = torch.exp(-(lms_spread / 1e-5).pow(2)).unsqueeze(1)
+            lms_c = lms_c + blend_w * (lms_mean.expand_as(lms_c) - lms_c)
         # 4. M2
         raw = lms_c @ self._M2.T
         L, a, b = raw[:, 0], raw[:, 1], raw[:, 2]
@@ -1152,10 +1156,11 @@ class HelmCT(ColorSpace):
         raw = torch.stack([L, a, b], dim=-1)
         lms_c = raw @ self._M2_inv.T
         # 3.5 Smooth neutral blend (matching forward — C∞, branchless)
-        lms_mean = lms_c.mean(dim=1, keepdim=True)
-        lms_spread = (lms_c.max(dim=1).values - lms_c.min(dim=1).values) / lms_mean.squeeze().abs().clamp(min=1e-30)
-        blend_w = torch.exp(-(lms_spread / 1e-5).pow(2)).unsqueeze(1)
-        lms_c = lms_c + blend_w * (lms_mean.expand_as(lms_c) - lms_c)
+        if self._neutral_blend:
+            lms_mean = lms_c.mean(dim=1, keepdim=True)
+            lms_spread = (lms_c.max(dim=1).values - lms_c.min(dim=1).values) / lms_mean.squeeze().abs().clamp(min=1e-30)
+            blend_w = torch.exp(-(lms_spread / 1e-5).pow(2)).unsqueeze(1)
+            lms_c = lms_c + blend_w * (lms_mean.expand_as(lms_c) - lms_c)
         # 3. Undo transfer function
         if self._transfer == "naka_rushton":
             ax = torch.abs(lms_c).clamp(min=1e-30)
