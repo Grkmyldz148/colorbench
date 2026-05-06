@@ -91,8 +91,9 @@ def main():
     ours = metric_eval._ciecam02_ucs_de(_XYZ1, _XYZ2)
     all_pass &= _check_close("CIECAM02-UCS", ours, ref, tol_max=1e-9, tol_mean=1e-10)
 
-    # --- DIN99 (own impl, validated to be within 0.5 STRESS of reference) ---
-    # Tolerance loosened: own NumPy uses different rotation convention.
+    # --- DIN99 ---
+    # Now delegates to colour-science Lab_to_DIN99. We use OWN _xyz_to_cielab
+    # (per-pair white) so the upstream Lab values can drift by 1e-15-ish.
     white = np.array([0.95047, 1.0, 1.08883])
     ours = metric_eval._din99_de(_XYZ1, _XYZ2, white)
     lab1 = colour.XYZ_to_Lab(_XYZ1)
@@ -101,12 +102,7 @@ def main():
         colour.Lab_to_DIN99(lab1) - colour.Lab_to_DIN99(lab2),
         axis=-1,
     )
-    # DIN99 has multiple variants in the wild; we accept ~3% relative drift.
-    rel_diff = np.abs(ours - ref) / np.maximum(ref, 1e-3)
-    print(f"  {'DIN99 (relative)':<25} max={float(rel_diff.max()):.2%}  mean={float(rel_diff.mean()):.2%}", end="")
-    din_pass = bool(rel_diff.max() < 0.05 and rel_diff.mean() < 0.03)
-    print("  PASS" if din_pass else "  FAIL (tolerances 5% max, 3% mean)")
-    all_pass &= din_pass
+    all_pass &= _check_close("DIN99", ours, ref, tol_max=1e-9, tol_mean=1e-10)
 
     print()
     print("RESULT:", "all baselines reproduce reference values" if all_pass else "FAILED — investigate")
