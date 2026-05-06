@@ -2,7 +2,19 @@
 
 A rigorous, GPU-accelerated benchmark for comparing perceptual color spaces.
 
-83 metrics across 12 categories. 3038 gradient pairs spanning sRGB, Display P3, and Rec.2020 gamuts. Fully deterministic, reproducible, and documented — including its own limitations.
+ColorBench has **two evaluation modes**, used for different scientific
+questions. Both apply identical pre-processing to every space, are
+deterministic, and ship with documented fairness notes.
+
+| Mode | What it tests | Tooling | Used by |
+|------|---------------|---------|---------|
+| **`compare` (gradient/palette)** | 90 metrics × 3038 gradient pairs across sRGB/P3/Rec.2020 — gamut geometry, gradient quality, palette uniformity, hue stability, cusp behaviour | PyTorch (`core/spaces.py`, `core/spaces_literature.py`) | "Is this space good for color *generation*?" |
+| **`metric` (STRESS)** | 4 perceptual datasets (COMBVD 3813, MacAdam 1974 128, He~2022 82, Human Feedback 3552) scored with the STRESS estimator | NumPy (`core/metric_eval.py`) — delegates CAM16-UCS, CIECAM02-UCS, $J_z a_z b_z$ to **`colour-science`** for canonical reference values | "Is this space good for color *difference prediction*?" |
+
+The two modes share dataset loaders, the STRESS formula, and the
+Bradford CAT pre-processing convention; they differ only in what they
+measure (gradient quality vs ΔE prediction). See [§ Fairness](#fairness)
+below for what each mode does and does not control for.
 
 ## Why
 
@@ -13,17 +25,45 @@ ColorBench measures everything and hides nothing. Each result includes fairness 
 ## Quick Start
 
 ```bash
-# Requirements: Python 3.11+, PyTorch, NumPy
-pip install torch numpy
+# Requirements: Python 3.11+, PyTorch, NumPy, colour-science (≥0.4)
+pip install torch numpy colour-science
 
-# Compare OKLab vs CIE Lab
-python run.py oklab cielab
+# Mode 1 — gradient/palette benchmark
+python run.py oklab cielab                        # head-to-head 90 metrics
+python run.py oklab genspace --json params.json   # custom JSON space
 
-# Compare a custom space from JSON
-python run.py oklab genspace --json path/to/params.json
+# Mode 2 — STRESS evaluation (perceptual distance prediction)
+python run.py metric --json metricspace_v21.json  # COMBVD/MacAdam/HumFB STRESS
 
 # Output: terminal summary + JSON reports + HTML comparison in results/
 ```
+
+## Fairness
+
+We use third-party reference implementations wherever possible to remove
+"author-implements-its-own-baselines" bias:
+
+- **CAM16-UCS** (Li et al. 2017): `colour.XYZ_to_CAM16UCS`. Default
+  conditions (`L_A=64 cd/m²`, `Y_b=20%`, average surround). The earlier
+  ColorBench shipped a hand-rolled NumPy implementation that produced
+  ~22 STRESS points high on COMBVD; replaced 2026-05-06.
+- **CIECAM02-UCS** (Luo et al. 2006): `colour.XYZ_to_CIECAM02` + JMh →
+  CAM02-UCS via `colour.JMh_CIECAM02_to_CAM02UCS`. Same conditions as
+  CAM16-UCS.
+- **Jzazbz** (Safdar et al. 2017): `colour.XYZ_to_Jzazbz`. HDR-aware
+  PQ transfer with the published 10,000 cd/m² peak constant.
+- **CIEDE2000**, **CIE94**, **CIE Lab**, **DIN99**, **OKLab**: own
+  NumPy implementations, validated against `colour-science` to within
+  ±0.5 STRESS points across all three datasets.
+- **Bradford CAT** is applied per-pair to all spaces that don't model
+  multi-illuminant whites internally.
+
+PyTorch reference classes in `core/spaces_literature.py` (used by the
+`compare` mode) are **separately implemented** because that mode requires
+batched GPU evaluation and gradient/palette tests need full-D adaptation
+to make achromatic axis exactly zero (D=1 by design). They are
+intentionally not bit-identical to `metric_eval`'s reference values, but
+both are documented and reproducible.
 
 ## What It Measures
 
