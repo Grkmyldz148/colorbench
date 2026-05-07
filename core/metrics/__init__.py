@@ -16,8 +16,14 @@ from .dataviz import measure_dataviz_distinguishability, measure_multistop_gradi
 from .wcag import measure_wcag_midpoint_contrast
 from .harmony import measure_harmony_accuracy, measure_hue_agreement
 from .photo import measure_photo_gamut_map
-from .animation import measure_eased_animation
 from .shade import measure_shade_hue_consistency, measure_chroma_preservation
+from .animation import measure_eased_animation, measure_animation
+from .cvd import measure_cvd
+from .extremes import measure_extremes, measure_jacobian
+from .contrast import measure_contrast
+from .hue_leaf import measure_hue_leaf
+from .multi_gradient import measure_3color_gradients
+from .double_rt import measure_double_roundtrip
 
 __all__ = [
     "measure_roundtrip",
@@ -42,4 +48,12 @@ __all__ = [
     "measure_eased_animation",
     "measure_shade_hue_consistency",
     "measure_chroma_preservation",
+    "measure_animation",
+    "measure_cvd",
+    "measure_extremes",
+    "measure_jacobian",
+    "measure_contrast",
+    "measure_hue_leaf",
+    "measure_3color_gradients",
+    "measure_double_roundtrip",
 ]
