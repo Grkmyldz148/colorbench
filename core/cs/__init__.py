@@ -18,6 +18,10 @@ from .literature import IPT, JzAzBz, ICtCp, CAM16UCS, DIN99d
 from .literature_canonical import (
     IPTCanonical, JzAzBzCanonical, CAM16UCSCanonical, DIN99dCanonical,
 )
+from .genspace_legacy import (
+    GenSpaceAdapter, NakaRushtonEnriched, GenSpaceEnriched,
+    GenSpaceBlueFix, NonlinearM1, CustomSpace,
+)
 from . import transfer
 
 __all__ = [
@@ -42,5 +46,11 @@ __all__ = [
     "JzAzBzCanonical",
     "CAM16UCSCanonical",
     "DIN99dCanonical",
+    "GenSpaceAdapter",
+    "NakaRushtonEnriched",
+    "GenSpaceEnriched",
+    "GenSpaceBlueFix",
+    "NonlinearM1",
+    "CustomSpace",
     "transfer",
 ]

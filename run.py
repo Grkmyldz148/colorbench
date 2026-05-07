@@ -45,8 +45,8 @@ from core.cs import (
     IPT, JzAzBz, ICtCp, CAM16UCS, DIN99d,
     IPTCanonical, JzAzBzCanonical, CAM16UCSCanonical, DIN99dCanonical,
 )
-# GenSpace adapter family (legacy core/spaces.py until Phase 7 port):
-from core.spaces import (
+# GenSpace adapter family (refactored Phase 7):
+from core.cs import (
     GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched,
     GenSpaceBlueFix, NonlinearM1,
 )
@@ -141,23 +141,23 @@ def build_space(space_arg, json_path, device, canonical=False, dtype=torch.float
             print(f"Error: {s} requires --json path", file=sys.stderr)
             sys.exit(1)
         return HelmCT(json_path, device=device, dtype=dtype)
-    # Legacy GenSpace family (Phase 7 will port; until then device-only signature):
+    # GenSpace family (refactored Phase 7, dtype/device-aware):
     elif s == "genenriched":
         if not json_path:
             print("Error: genenriched requires --json path", file=sys.stderr); sys.exit(1)
-        return GenSpaceEnriched(json_path, device)
+        return GenSpaceEnriched(json_path, device, dtype=dtype)
     elif s == "nonlinearm1" or s == "nlm1":
         if not json_path:
             print("Error: nonlinearm1 requires --json path", file=sys.stderr); sys.exit(1)
-        return NonlinearM1(json_path, device)
+        return NonlinearM1(json_path, device, dtype=dtype)
     elif s == "bluefix":
         if not json_path:
             print("Error: bluefix requires --json path", file=sys.stderr); sys.exit(1)
-        return GenSpaceBlueFix(json_path, device)
+        return GenSpaceBlueFix(json_path, device, dtype=dtype)
     elif s == "nr" or s == "nakarushton":
         if not json_path:
             print("Error: nr requires --json path", file=sys.stderr); sys.exit(1)
-        return NakaRushtonEnriched(json_path, device)
+        return NakaRushtonEnriched(json_path, device, dtype=dtype)
     # Literature spaces (refactored, dtype/device-aware):
     elif s == "ipt":
         return IPTCanonical(device) if canonical else IPT(device)
