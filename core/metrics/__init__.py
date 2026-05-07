@@ -13,6 +13,11 @@ from .munsell import measure_munsell_value, measure_munsell_hue
 from .macadam import measure_macadam_isotropy
 from .palette import measure_palette_uniformity, measure_tint_shade_hue
 from .dataviz import measure_dataviz_distinguishability, measure_multistop_gradient
+from .wcag import measure_wcag_midpoint_contrast
+from .harmony import measure_harmony_accuracy, measure_hue_agreement
+from .photo import measure_photo_gamut_map
+from .animation import measure_eased_animation
+from .shade import measure_shade_hue_consistency, measure_chroma_preservation
 
 __all__ = [
     "measure_roundtrip",
@@ -30,4 +35,11 @@ __all__ = [
     "measure_tint_shade_hue",
     "measure_dataviz_distinguishability",
     "measure_multistop_gradient",
+    "measure_wcag_midpoint_contrast",
+    "measure_harmony_accuracy",
+    "measure_hue_agreement",
+    "measure_photo_gamut_map",
+    "measure_eased_animation",
+    "measure_shade_hue_consistency",
+    "measure_chroma_preservation",
 ]
