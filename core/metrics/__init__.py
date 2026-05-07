@@ -9,6 +9,10 @@ from .gamut import measure_gamut
 from .gamut_mapping import measure_gamut_mapping
 from .hue import measure_hue, measure_special_gradients
 from .stability import measure_stability
+from .munsell import measure_munsell_value, measure_munsell_hue
+from .macadam import measure_macadam_isotropy
+from .palette import measure_palette_uniformity, measure_tint_shade_hue
+from .dataviz import measure_dataviz_distinguishability, measure_multistop_gradient
 
 __all__ = [
     "measure_roundtrip",
@@ -19,4 +23,11 @@ __all__ = [
     "measure_hue",
     "measure_special_gradients",
     "measure_stability",
+    "measure_munsell_value",
+    "measure_munsell_hue",
+    "measure_macadam_isotropy",
+    "measure_palette_uniformity",
+    "measure_tint_shade_hue",
+    "measure_dataviz_distinguishability",
+    "measure_multistop_gradient",
 ]
