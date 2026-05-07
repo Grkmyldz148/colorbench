@@ -83,10 +83,10 @@ def _build_pairs(dev, dt):
                       torch.tensor([r2, g2, b2], device=dev, dtype=dt)))
         names.append(f"dark_h{h}")
 
-    gen = torch.Generator(device=dev).manual_seed(88)
+    gen = torch.Generator(device="cpu").manual_seed(88)
     for k in range(50):
-        r1 = torch.rand(3, generator=gen, device=dev, dtype=dt)
-        r2 = torch.rand(3, generator=gen, device=dev, dtype=dt)
+        r1 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
+        r2 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
         pairs.append((r1, r2))
         names.append(f"rnd{k}")
 

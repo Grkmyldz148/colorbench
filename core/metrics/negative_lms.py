@@ -16,8 +16,8 @@ def measure_negative_lms(space, device=None) -> dict:
     dev, dt = space.device, space.dtype
     ms = matrix(_M_SRGB_LIST, dev, dt)
 
-    gen = torch.Generator(device=dev).manual_seed(42)
-    srgb = torch.rand(10000, 3, generator=gen, device=dev, dtype=dt)
+    gen = torch.Generator(device="cpu").manual_seed(42)
+    srgb = torch.rand(10000, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
     xyz = srgb_to_linear(srgb) @ ms.T
 
     # Locate space's M1 by attribute name (HelmCT uses _M1_mod, OKLab uses M1)

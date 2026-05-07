@@ -18,8 +18,8 @@ def measure_cross_gamut_consistency(space, device=None) -> dict:
     mp3 = matrix(_M_P3_LIST, dev, dt)
     mp3i = torch.linalg.inv(mp3)
 
-    gen = torch.Generator(device=dev).manual_seed(66)
-    srgb = torch.rand(1000, 3, generator=gen, device=dev, dtype=dt)
+    gen = torch.Generator(device="cpu").manual_seed(66)
+    srgb = torch.rand(1000, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
     xyz = srgb_to_linear(srgb) @ ms.T
 
     lab1 = space.forward(xyz)

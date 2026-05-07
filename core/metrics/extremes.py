@@ -76,10 +76,10 @@ def measure_jacobian(space, device=None) -> dict:
     mr2020 = matrix(_M_REC2020_LIST, dev, dt)
     eps = 1e-7
 
-    gen = torch.Generator(device=dev).manual_seed(77)
-    srgb_c = torch.rand(2000, 3, generator=gen, device=dev, dtype=dt)
-    p3_c = torch.rand(1500, 3, generator=gen, device=dev, dtype=dt)
-    r2020_c = torch.rand(1500, 3, generator=gen, device=dev, dtype=dt)
+    gen = torch.Generator(device="cpu").manual_seed(77)
+    srgb_c = torch.rand(2000, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
+    p3_c = torch.rand(1500, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
+    r2020_c = torch.rand(1500, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
     xyz = torch.cat([
         srgb_to_linear(srgb_c) @ ms.T,
         srgb_to_linear(p3_c) @ mp3.T,

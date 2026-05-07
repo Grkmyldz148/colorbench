@@ -14,8 +14,8 @@ def measure_double_roundtrip(space, device=None) -> dict:
     dev, dt = space.device, space.dtype
     ms = matrix(_M_SRGB_LIST, dev, dt)
 
-    gen = torch.Generator(device=dev).manual_seed(33)
-    srgb = torch.rand(10000, 3, generator=gen, device=dev, dtype=dt)
+    gen = torch.Generator(device="cpu").manual_seed(33)
+    srgb = torch.rand(10000, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
     xyz_orig = srgb_to_linear(srgb) @ ms.T
 
     results = {}

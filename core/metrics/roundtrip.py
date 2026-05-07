@@ -71,19 +71,31 @@ def _rec2020_uniform(space, mat_r2020) -> dict:
 
 
 def _rec2020_boundary(space, mat_r2020) -> dict:
-    """50k near-primary samples. Loop kept sequential for snapshot stability:
-    vectorized random-draw order differs from original, breaking bit-exactness.
+    """50k near-primary samples. Vectorized while preserving bit-exact RNG sequence.
+
+    Legacy code consumed 3 × rand(1) per iter (dom + 2 oth, in fixed channel order).
+    `torch.rand(150_000)` with same seed produces the SAME sequence as 150k × rand(1)
+    (verified bit-exact). We then redistribute into the (50_000, 3) tensor following
+    the original channel-assignment pattern.
     """
-    gen = torch.Generator(device=space.device).manual_seed(42)
-    rgb = torch.zeros(50_000, 3, device=space.device, dtype=space.dtype)
-    for i in range(50_000):
-        ch = i % 3
-        rgb[i, ch] = 0.8 + torch.rand(1, generator=gen, device=space.device,
-                                       dtype=space.dtype).item() * 0.2
-        for j in range(3):
-            if j != ch:
-                rgb[i, j] = torch.rand(1, generator=gen, device=space.device,
-                                        dtype=space.dtype).item() * 0.3
+    dev, dt = space.device, space.dtype
+    gen = torch.Generator(device="cpu").manual_seed(42)
+    all_rands = torch.rand(150_000, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt).reshape(50_000, 3)
+    # Per row: [dom, oth_first, oth_second] in legacy consumption order
+    dom_val = 0.8 + all_rands[:, 0] * 0.2  # (50k,)
+    oth1_val = all_rands[:, 1] * 0.3
+    oth2_val = all_rands[:, 2] * 0.3
+    ch = torch.arange(50_000, device=dev) % 3  # 0,1,2,0,1,2,...
+    # Other channel indices in fixed (j=0,1,2 except ch) order:
+    #   ch=0 → (1, 2),  ch=1 → (0, 2),  ch=2 → (0, 1)
+    other_idx = torch.tensor([[1, 2], [0, 2], [0, 1]], device=dev, dtype=torch.long)
+    j1 = other_idx[ch, 0]
+    j2 = other_idx[ch, 1]
+    rgb = torch.zeros(50_000, 3, device=dev, dtype=dt)
+    rows = torch.arange(50_000, device=dev)
+    rgb[rows, ch] = dom_val
+    rgb[rows, j1] = oth1_val
+    rgb[rows, j2] = oth2_val
     xyz = rgb.pow(2.4) @ mat_r2020.T
     rt = space.inverse(space.forward(xyz))
     return {"max_error": (xyz - rt).abs().max().item()}

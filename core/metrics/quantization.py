@@ -34,8 +34,8 @@ def measure_quantization_symmetry(space, device=None) -> dict:
     ws_exact = (ws_8bit_rt == (ws * 255).round()).all(dim=1).sum().item()
 
     # 10000 random 8-bit triplets
-    gen = torch.Generator(device=dev).manual_seed(55)
-    rnd_8bit = torch.randint(0, 256, (10000, 3), generator=gen, device=dev).to(dt)
+    gen = torch.Generator(device="cpu").manual_seed(55)
+    rnd_8bit = torch.randint(0, 256, (10000, 3), generator=gen).to(device=dev, dtype=dt)
     rnd_xyz = srgb_to_linear(rnd_8bit / 255.0) @ ms.T
     rnd_xyz_rt = space.inverse(space.forward(rnd_xyz))
     rnd_8bit_rt = (linear_to_srgb((rnd_xyz_rt @ msi.T).clamp(0, 1)) * 255).round()

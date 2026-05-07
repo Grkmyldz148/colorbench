@@ -16,26 +16,26 @@ def measure_stability(space, device=None) -> dict:
     dev, dt = space.device, space.dtype
     ms = matrix(_M_SRGB_LIST, dev, dt)
 
-    gen = torch.Generator(device=dev).manual_seed(99)
+    gen = torch.Generator(device="cpu").manual_seed(99)
 
     # Perturbation: 1e-8 XYZ noise on 5k random sRGB samples.
     # Use generator-based randn (legacy used randn_like which is global RNG and
     # thus non-deterministic — this caused max_lab_change to drift across runs).
-    srgb = torch.rand(5000, 3, generator=gen, device=dev, dtype=dt)
+    srgb = torch.rand(5000, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
     xyz = srgb_to_linear(srgb) @ ms.T
     lab = space.forward(xyz)
-    perturb = torch.randn(xyz.shape, generator=gen, device=dev, dtype=dt) * 1e-8
+    perturb = torch.randn(xyz.shape, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt) * 1e-8
     lab2 = space.forward(xyz + perturb)
     diff = (lab - lab2).abs()
 
     # Near-black (sRGB < 0.01)
-    dark = torch.rand(1000, 3, generator=gen, device=dev, dtype=dt) * 0.01
+    dark = torch.rand(1000, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt) * 0.01
     dark_lab = space.forward(srgb_to_linear(dark) @ ms.T)
     dark_nan = dark_lab.isnan().sum().item()
     dark_inf = dark_lab.isinf().sum().item()
 
     # Near-white (sRGB > 0.99)
-    bright = 0.99 + torch.rand(1000, 3, generator=gen, device=dev, dtype=dt) * 0.01
+    bright = 0.99 + torch.rand(1000, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt) * 0.01
     bright_lab = space.forward(srgb_to_linear(bright) @ ms.T)
     bright_nan = bright_lab.isnan().sum().item()
     bright_inf = bright_lab.isinf().sum().item()

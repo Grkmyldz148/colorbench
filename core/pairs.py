@@ -278,10 +278,10 @@ def generate_all_pairs(device):
         add("ui_shade", f"shade_h{h_deg}_wide2", shades[0], shades[9])
 
     # Random sRGB (1000)
-    gen = torch.Generator(device=device).manual_seed(42)
+    gen = torch.Generator(device="cpu").manual_seed(42)
     for k in range(1000):
-        rgb1 = torch.rand(3, generator=gen, device=device, dtype=torch.float64)
-        rgb2 = torch.rand(3, generator=gen, device=device, dtype=torch.float64)
+        rgb1 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=device)
+        rgb2 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=device)
         x1 = M_SRGB @ srgb_to_linear(rgb1)
         x2 = M_SRGB @ srgb_to_linear(rgb2)
         pairs.append(torch.stack([x1, x2]))
@@ -365,8 +365,8 @@ def generate_all_pairs(device):
 
     # Random P3 (500)
     for k in range(500):
-        rgb1 = torch.rand(3, generator=gen, device=device, dtype=torch.float64)
-        rgb2 = torch.rand(3, generator=gen, device=device, dtype=torch.float64)
+        rgb1 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=device)
+        rgb2 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=device)
         x1 = M_P3 @ srgb_to_linear(rgb1)
         x2 = M_P3 @ srgb_to_linear(rgb2)
         pairs.append(torch.stack([x1, x2]))
@@ -450,8 +450,8 @@ def generate_all_pairs(device):
 
     # Random Rec.2020 (500)
     for k in range(500):
-        rgb1 = torch.rand(3, generator=gen, device=device, dtype=torch.float64)
-        rgb2 = torch.rand(3, generator=gen, device=device, dtype=torch.float64)
+        rgb1 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=device)
+        rgb2 = torch.rand(3, generator=gen, dtype=torch.float64).to(device=device)
         x1 = M_R2020 @ srgb_to_linear(rgb1)
         x2 = M_R2020 @ srgb_to_linear(rgb2)
         pairs.append(torch.stack([x1, x2]))

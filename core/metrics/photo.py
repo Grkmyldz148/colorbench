@@ -23,8 +23,8 @@ def measure_photo_gamut_map(space, device=None) -> dict:
     mp3 = matrix(_M_P3_LIST, dev, dt)
     d65 = vec(_D65_LIST, dev, dt)
 
-    gen = torch.Generator(device=dev).manual_seed(99)
-    p3_rgb = torch.rand(500, 3, generator=gen, device=dev, dtype=dt)
+    gen = torch.Generator(device="cpu").manual_seed(99)
+    p3_rgb = torch.rand(500, 3, generator=gen, dtype=torch.float64).to(device=dev, dtype=dt)
     p3_xyz = srgb_to_linear(p3_rgb) @ mp3.T
 
     srgb_lin = p3_xyz @ msi.T
