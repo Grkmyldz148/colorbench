@@ -23,6 +23,7 @@ from .genspace_legacy import (
     GenSpaceAdapter, NakaRushtonEnriched, GenSpaceEnriched,
     GenSpaceBlueFix, NonlinearM1, CustomSpace,
 )
+from .research import HueDep, NativePolar, PolarBlend, TwoStage
 from . import transfer
 
 __all__ = [
@@ -55,5 +56,9 @@ __all__ = [
     "GenSpaceBlueFix",
     "NonlinearM1",
     "CustomSpace",
+    "HueDep",
+    "NativePolar",
+    "PolarBlend",
+    "TwoStage",
     "transfer",
 ]
