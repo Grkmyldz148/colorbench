@@ -14,6 +14,10 @@ from .pwL import PiecewiseLinearL
 from .enrichment import LGatedHueEnrichment, ChromaPreservingHueRotation
 from .neutral import neutral_blend, NCLut
 from .helmct import HelmCT
+from .literature import IPT, JzAzBz, ICtCp, CAM16UCS, DIN99d
+from .literature_canonical import (
+    IPTCanonical, JzAzBzCanonical, CAM16UCSCanonical, DIN99dCanonical,
+)
 from . import transfer
 
 __all__ = [
@@ -29,5 +33,14 @@ __all__ = [
     "neutral_blend",
     "NCLut",
     "HelmCT",
+    "IPT",
+    "JzAzBz",
+    "ICtCp",
+    "CAM16UCS",
+    "DIN99d",
+    "IPTCanonical",
+    "JzAzBzCanonical",
+    "CAM16UCSCanonical",
+    "DIN99dCanonical",
     "transfer",
 ]
