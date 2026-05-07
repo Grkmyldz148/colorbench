@@ -24,6 +24,7 @@ from ..cs import D65
 from ..gpu_de import ciede2000
 
 PI = np.pi
+# Module-level constants kept on CPU float64; cast to space dtype/device at use site via _to().
 _M_SRGB = torch.tensor([
     [0.4124564, 0.3575761, 0.1804375],
     [0.2126729, 0.7151522, 0.0721750],
@@ -41,24 +42,44 @@ _M_REC2020 = torch.tensor([
 ], dtype=torch.float64)
 
 
-def _to(t, device): return t.to(device=device, dtype=torch.float64)
-def _srgb_to_lin(c): return torch.where(c <= 0.04045, c/12.92, ((c+0.055)/1.055).pow(2.4))
+def _to(t, space):
+    """Cast tensor to space.device + space.dtype.
+
+    Phase 10c (CUDA fix): accepts a ColorSpace (with .device + .dtype) instead
+    of a bare device. All callers updated. Legacy `_to(t, space)` no longer
+    works; passing a torch.device fails on float32 spaces because dtype mismatch
+    surfaces only at first space.forward() call.
+    """
+    return t.to(device=space.device, dtype=space.dtype)
+
+
+def _srgb_to_lin(c):
+    return torch.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055).pow(2.4))
+
+
 def _lin_to_srgb(c):
-    return torch.where(c <= 0.0031308, c*12.92,
-                       1.055*c.clamp(min=1e-12).pow(1.0/2.4) - 0.055)
+    return torch.where(c <= 0.0031308, c * 12.92,
+                       1.055 * c.clamp(min=1e-12).pow(1.0 / 2.4) - 0.055)
+
 
 def _xyz_to_cielab(xyz, d65):
     r = xyz / d65
-    delta3 = (6.0/29.0)**3
-    f = torch.where(r > delta3, r.pow(1.0/3.0), r/(3*(6.0/29.0)**2) + 4.0/29.0)
-    L = 116.0*f[..., 1] - 16.0
-    a = 500.0*(f[..., 0] - f[..., 1])
-    b = 200.0*(f[..., 1] - f[..., 2])
+    delta3 = (6.0 / 29.0) ** 3
+    f = torch.where(r > delta3, r.pow(1.0 / 3.0), r / (3 * (6.0 / 29.0) ** 2) + 4.0 / 29.0)
+    L = 116.0 * f[..., 1] - 16.0
+    a = 500.0 * (f[..., 0] - f[..., 1])
+    b = 200.0 * (f[..., 1] - f[..., 2])
     return torch.stack([L, a, b], dim=-1)
 
-def _hex_xyz(hx, ms, device):
+
+def _hex_xyz(hx, ms, space=None):
+    """Hex string → XYZ. ms tensor already carries dtype/device; space param
+    accepted for backward compat (not strictly needed)."""
     h = hx.lstrip("#")
-    rgb = torch.tensor([int(h[i:i+2], 16)/255 for i in (0,2,4)], device=device, dtype=torch.float64)
+    rgb = torch.tensor(
+        [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)],
+        device=ms.device, dtype=ms.dtype,
+    )
     return ms @ _srgb_to_lin(rgb)
 
 def _cv(t):
@@ -70,28 +91,32 @@ def _hue_cstd_torch(h_rad):
     return float(np.sqrt(-2*np.log(max(R, 1e-12))) * 180/PI)
 
 def _tone_scale_in_space(seed_xyz, space, device, n=11, L_light=0.97, L_dark=0.05):
-    """Generate n-shade tone scale from seed using space.forward/inverse.
-    Constant (a,b), sweep L from L_light → seed_L → L_dark."""
+    """Generate n-shade tone scale from seed using space.forward/inverse."""
     lab_seed = space.forward(seed_xyz.unsqueeze(0))[0]
-    base_L = float(lab_seed[0]); seed_a, seed_b = lab_seed[1], lab_seed[2]
+    base_L = float(lab_seed[0])
+    seed_a, seed_b = lab_seed[1], lab_seed[2]
     levels = []
     for i in range(n):
-        t = i / (n-1)
+        t = i / (n - 1)
         if t <= 0.5:
-            tt = t*2; L = L_light + tt*(base_L - L_light)
+            tt = t * 2
+            L = L_light + tt * (base_L - L_light)
         else:
-            tt = (t - 0.5)*2; L = base_L + tt*(L_dark - base_L)
+            tt = (t - 0.5) * 2
+            L = base_L + tt * (L_dark - base_L)
         levels.append(L)
-    Ls = torch.tensor(levels, device=device, dtype=torch.float64)
-    a_arr = seed_a.expand(n); b_arr = seed_b.expand(n)
+    Ls = torch.tensor(levels, device=space.device, dtype=space.dtype)
+    a_arr = seed_a.expand(n)
+    b_arr = seed_b.expand(n)
     scale_lab = torch.stack([Ls, a_arr, b_arr], dim=-1)
     return space.inverse(scale_lab)
+
 
 def _gradient_lab(xyz1, xyz2, n, space, device):
     """Lab-cartesian linear interpolation in space."""
     lab1 = space.forward(xyz1.unsqueeze(0))
     lab2 = space.forward(xyz2.unsqueeze(0))
-    ts = torch.linspace(0, 1, n, device=device, dtype=torch.float64).view(-1, 1)
+    ts = torch.linspace(0, 1, n, device=space.device, dtype=space.dtype).view(-1, 1)
     interp = lab1 + ts * (lab2 - lab1)
     return space.inverse(interp)
 
@@ -100,27 +125,25 @@ def _gradient_lab(xyz1, xyz2, n, space, device):
 #  PHASE 11 — Adillik düzeltme yardımcıları (uzay-bağımsız hedefler)
 # ═══════════════════════════════════════════════════════════════════
 
-def _cielab_target_to_xyz(L_star, C_star, h_deg, device):
-    """CIE L*a*b* hedef → XYZ. Uzay-bağımsız hedef noktası."""
+def _cielab_target_to_xyz(L_star, C_star, h_deg, space):
+    """CIE L*a*b* hedef → XYZ. Uzay-bağımsız hedef noktası, space dtype."""
     a = C_star * np.cos(np.radians(h_deg))
     b = C_star * np.sin(np.radians(h_deg))
-    lab = torch.tensor([L_star, a, b], device=device, dtype=torch.float64)
-    # CIE Lab → XYZ (D65 ASTM-E308)
-    d65 = _to(D65, device)
+    d65 = _to(D65, space)
     fy = (L_star + 16.0) / 116.0
     fx = fy + a / 500.0
     fz = fy - b / 200.0
     delta = 6.0 / 29.0
-    def f_inv(t): return t**3 if t > delta else 3*delta*delta*(t - 4.0/29.0)
+    def f_inv(t): return t ** 3 if t > delta else 3 * delta * delta * (t - 4.0 / 29.0)
     X = d65[0].item() * f_inv(fx.item() if hasattr(fx, 'item') else fx)
     Y = d65[1].item() * f_inv(fy)
     Z = d65[2].item() * f_inv(fz.item() if hasattr(fz, 'item') else fz)
-    return torch.tensor([X, Y, Z], device=device, dtype=torch.float64)
+    return torch.tensor([X, Y, Z], device=space.device, dtype=space.dtype)
 
 
 def _cielab_target_to_space_lab(L_star, C_star, h_deg, space, device):
     """CIE Lab hedef noktasını test space koordinatına çevirir."""
-    xyz = _cielab_target_to_xyz(L_star, C_star, h_deg, device)
+    xyz = _cielab_target_to_xyz(L_star, C_star, h_deg, space)
     return space.forward(xyz.unsqueeze(0))[0]
 
 
@@ -131,7 +154,7 @@ def _cielab_target_to_space_lab(L_star, C_star, h_deg, space, device):
 def measure_user_image_synthetic_gradient(space, device):
     """1.1 — Synthetic image gradient: 8 photo-realistic endpoint pair × 256 step.
     Reports mean banding count + step CV across 8 gradients."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     PAIRS = [
         ("sky→sunset",     "#0EA5E9", "#FF8C00"),
         ("forest→sky",     "#166534", "#0EA5E9"),
@@ -144,7 +167,7 @@ def measure_user_image_synthetic_gradient(space, device):
     ]
     bandings, cvs, drifts = [], [], []
     for name, h1, h2 in PAIRS:
-        xyz_path = _gradient_lab(_hex_xyz(h1, ms, device), _hex_xyz(h2, ms, device), 256, space, device)
+        xyz_path = _gradient_lab(_hex_xyz(h1, ms, space), _hex_xyz(h2, ms, space), 256, space, device)
         cl = _xyz_to_cielab(xyz_path, d65)
         de = ciede2000(cl[:-1], cl[1:])
         bandings.append((de < 1.0).sum().item())
@@ -165,7 +188,7 @@ def measure_user_color_grading_lut(space, device):
     """1.2 — Color grading LUT: CIE Lab L* gamma 1.2 + sat 1.05.
     PHASE 11 FIX: LUT CIE Lab L* üzerinde uygulanır (uzay-bağımsız).
     Round-trip = uzayın bu LUT'u ne kadar doğru reproduce ediyor."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     PATCHES = [
         "#735244","#C29682","#627A9D","#576C43","#8580B1","#67BDAA",
         "#D67E2C","#505BA6","#C15A63","#5E3C6C","#9DBC40","#E0A32E",
@@ -174,7 +197,7 @@ def measure_user_color_grading_lut(space, device):
     ]
     de_apply = []
     for hx in PATCHES:
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         # CIE Lab'da LUT uygula (uzay-bağımsız ground truth)
         cl_orig = _xyz_to_cielab(xyz0.unsqueeze(0), d65)[0]
         L_g = (cl_orig[0]/100.0 - 0.05).clamp(0,1).pow(1/1.2).clamp(0,1) * 100.0 * 1.1
@@ -183,7 +206,7 @@ def measure_user_color_grading_lut(space, device):
         # CIE Lab graded → XYZ via space.forward+inverse round-trip
         cl_target = torch.stack([L_g, a_g, b_g])
         xyz_target = _cielab_target_to_xyz(L_g.item(), float(np.hypot(a_g.item(), b_g.item())),
-                                            float(np.degrees(np.arctan2(b_g.item(), a_g.item())) % 360), device)
+                                            float(np.degrees(np.arctan2(b_g.item(), a_g.item())) % 360), space)
         # Through space round-trip
         xyz_back = space.inverse(space.forward(xyz_target.unsqueeze(0)))[0]
         cl_back = _xyz_to_cielab(xyz_back.unsqueeze(0), d65)[0]
@@ -198,9 +221,9 @@ def measure_user_color_grading_lut(space, device):
 def measure_user_white_balance(space, device):
     """1.3 — White balance shift: D55 → D65 round-trip in space.
     Measures hue stability under chromatic adaptation."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     # D55 white point and 12 hue test colors
-    D55 = torch.tensor([0.95682, 1.0, 0.92149], device=device, dtype=torch.float64)
+    D55 = torch.tensor([0.95682, 1.0, 0.92149], device=space.device, dtype=space.dtype)
     # 12 hue × 3 saturation
     test_xyzs = []
     for h in range(0, 360, 30):
@@ -208,7 +231,7 @@ def measure_user_white_balance(space, device):
             r = 0.5 + s*0.5*np.cos(np.radians(h))
             g = 0.5 + s*0.5*np.cos(np.radians(h-120))
             b = 0.5 + s*0.5*np.cos(np.radians(h+120))
-            rgb = torch.tensor([max(0, r), max(0, g), max(0, b)], device=device, dtype=torch.float64)
+            rgb = torch.tensor([max(0, r), max(0, g), max(0, b)], device=space.device, dtype=space.dtype)
             test_xyzs.append(ms @ _srgb_to_lin(rgb))
     test_xyzs = torch.stack(test_xyzs)
     # Apply D55→D65 chromatic adaptation in space (Bradford-like)
@@ -232,7 +255,7 @@ def measure_user_natural_scene_palette(space, device):
     """1.4 — Natural scene colors × tone scale × hue stability.
     PHASE 11 FIX: Round-trip-only test bilgi vermiyor (her ikisi 0). Yerine
     her doğa rengi için 11-shade tone scale + hue stability ölç."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     NATURAL = [
         ("sky_clear",     "#87CEEB"), ("sky_sunset",    "#FF7E5F"),
         ("foliage_summer","#228B22"), ("foliage_autumn","#D2691E"),
@@ -243,7 +266,7 @@ def measure_user_natural_scene_palette(space, device):
     ]
     hue_stds, step_cvs = [], []
     for name, hx in NATURAL:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         h_p = torch.atan2(cl[:, 2], cl[:, 1])
         hue_stds.append(_hue_cstd_torch(h_p))
@@ -263,12 +286,12 @@ def measure_user_natural_scene_palette(space, device):
 
 def measure_user_tailwind_palette(space, device):
     """2.1 — Tailwind 500 colors × 11-shade tone scale. step CV + hue drift."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     SEEDS = ["#3B82F6","#EF4444","#22C55E","#F59E0B","#A855F7","#14B8A6",
              "#F43F5E","#0EA5E9","#8B5CF6","#06B6D4","#EAB308","#EC4899"]
     cvs, drifts = [], []
     for hx in SEEDS:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         de = ciede2000(cl[:-1], cl[1:])
         cvs.append(_cv(de))
@@ -281,12 +304,12 @@ def measure_user_tailwind_palette(space, device):
 
 def measure_user_material_palette(space, device):
     """2.2 — Material Design 500 palette × 11-shade. Material has different hue spread than Tailwind."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     SEEDS = ["#F44336","#9C27B0","#3F51B5","#009688","#FF9800","#795548",
              "#607D8B","#E91E63","#673AB7","#FFC107","#4CAF50","#2196F3"]
     cvs, drifts = [], []
     for hx in SEEDS:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         de = ciede2000(cl[:-1], cl[1:])
         cvs.append(_cv(de))
@@ -298,7 +321,7 @@ def measure_user_material_palette(space, device):
 
 def measure_user_diverging_colormap(space, device):
     """2.3 — 6 popüler diverging colormap: RdBu, BrBG, PuOr, PRGn, RdYlBu, PiYG."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     DIV = [
         ("RdBu",   "#053061","#FFFFFF","#67001F"),
         ("BrBG",   "#543005","#F5F5F5","#003C30"),
@@ -309,8 +332,8 @@ def measure_user_diverging_colormap(space, device):
     ]
     cvs = []
     for name, c1, neutral, c2 in DIV:
-        path1 = _gradient_lab(_hex_xyz(c1, ms, device), _hex_xyz(neutral, ms, device), 11, space, device)
-        path2 = _gradient_lab(_hex_xyz(neutral, ms, device), _hex_xyz(c2, ms, device), 11, space, device)
+        path1 = _gradient_lab(_hex_xyz(c1, ms, space), _hex_xyz(neutral, ms, space), 11, space, device)
+        path2 = _gradient_lab(_hex_xyz(neutral, ms, space), _hex_xyz(c2, ms, space), 11, space, device)
         full = torch.cat([path1[:-1], path2], dim=0)
         cl = _xyz_to_cielab(full, d65)
         de = ciede2000(cl[:-1], cl[1:])
@@ -319,7 +342,7 @@ def measure_user_diverging_colormap(space, device):
 
 def measure_user_sequential_colormap(space, device):
     """2.4 — viridis/plasma/magma/inferno-like sequential colormaps × 256 steps."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     SEQ = [
         ("viridis", "#440154","#FDE725"),
         ("plasma",  "#0D0887","#F0F921"),
@@ -328,7 +351,7 @@ def measure_user_sequential_colormap(space, device):
     ]
     cvs, bandings = [], []
     for name, h1, h2 in SEQ:
-        xyz_path = _gradient_lab(_hex_xyz(h1, ms, device), _hex_xyz(h2, ms, device), 256, space, device)
+        xyz_path = _gradient_lab(_hex_xyz(h1, ms, space), _hex_xyz(h2, ms, space), 256, space, device)
         cl = _xyz_to_cielab(xyz_path, d65)
         de = ciede2000(cl[:-1], cl[1:])
         cvs.append(_cv(de))
@@ -340,10 +363,10 @@ def measure_user_categorical_palette(space, device):
     """2.5 — 8-renkli categorical palette × min pairwise ΔE.
     PHASE 11 FIX: CIE L*=60, C*=30 hedef (uzay-bağımsız), her uzaya aynı
     semantik nokta. Önceki sürüm "L=0.6 in space" kullanıyordu — semantik mismatch."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     L_star, C_star = 60.0, 30.0  # CIE Lab hedef
     hues_deg = list(range(0, 360, 45))
-    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, device) for h_deg in hues_deg]
+    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, space) for h_deg in hues_deg]
     xyz = torch.stack(xyzs)
     cl = _xyz_to_cielab(xyz, d65)
     # Pairwise ΔE2000
@@ -359,18 +382,18 @@ def measure_user_categorical_palette(space, device):
 def measure_user_theme_dark_mode(space, device):
     """2.6 — Light → dark mode: CIE L* invert (100 - L*), hue preservation.
     PHASE 11 FIX: CIE Lab L* invert (uzay-bağımsız), sonra space round-trip."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     LIGHT = ["#3B82F6","#EF4444","#22C55E","#F59E0B","#A855F7","#14B8A6","#F43F5E","#0EA5E9"]
     hue_drifts = []
     for hx in LIGHT:
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         cl_orig = _xyz_to_cielab(xyz0.unsqueeze(0), d65)[0]
         # Dark mode: invert CIE L* (100 - L*) keep a,b
         L_dark = 100.0 - cl_orig[0].item()
         C_orig = float(np.hypot(cl_orig[1].item(), cl_orig[2].item()))
         h_orig = float(np.degrees(np.arctan2(cl_orig[2].item(), cl_orig[1].item())) % 360)
         # Target dark in CIE Lab → space round-trip
-        xyz_dark = _cielab_target_to_xyz(L_dark, C_orig, h_orig, device)
+        xyz_dark = _cielab_target_to_xyz(L_dark, C_orig, h_orig, space)
         xyz_back = space.inverse(space.forward(xyz_dark.unsqueeze(0)))[0]
         cl_back = _xyz_to_cielab(xyz_back.unsqueeze(0), d65)[0]
         h_back = float(np.degrees(np.arctan2(cl_back[2].item(), cl_back[1].item())) % 360)
@@ -387,12 +410,12 @@ def measure_user_theme_dark_mode(space, device):
 
 def measure_user_skin_tone_fitzpatrick(space, device):
     """3.1 — 6 Fitzpatrick × 11-shade × hue stability + step CV."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     SKIN = [("FT_I","#F4D9C0"),("FT_II","#E5BB9F"),("FT_III","#C99A78"),
             ("FT_IV","#A47553"),("FT_V","#7C5337"),("FT_VI","#4A2D1B")]
     hue_stds, cvs = [], []
     for name, hx in SKIN:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         h_p = torch.atan2(cl[:, 2], cl[:, 1])
         hue_stds.append(_hue_cstd_torch(h_p))
@@ -404,13 +427,13 @@ def measure_user_skin_tone_fitzpatrick(space, device):
 def measure_user_natural_colors(space, device):
     """3.2 — Sky/foliage/water/sunset/sand reproduction quality.
     Real-world chromatic categories — 5 doğa rengi × tone scale step CV + hue stability."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     NAT = [("sky","#87CEEB"),("foliage","#228B22"),("water","#006994"),
            ("sunset","#FF7E5F"),("sand","#F4A460"),("snow","#F0F8FF"),
            ("autumn","#D2691E"),("ocean","#4682B4")]
     hue_stds, cvs = [], []
     for name, hx in NAT:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         h_p = torch.atan2(cl[:, 2], cl[:, 1])
         hue_stds.append(_hue_cstd_torch(h_p))
@@ -421,7 +444,7 @@ def measure_user_natural_colors(space, device):
 
 def measure_user_brand_colors(space, device):
     """3.3 — 30+ brand colors × tone scale × hue stability."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     BRANDS = ["#FF0000","#0BCED9","#0051BA","#FF6F00","#1DA1F2","#25D366",
               "#1DB954","#E50914","#4A154B","#075E54","#FFFC00","#7289DA",
               "#FF4500","#5851DB","#1A73E8","#34A853","#EA4335","#FBBC04",
@@ -429,7 +452,7 @@ def measure_user_brand_colors(space, device):
               "#FF9900","#146EB4","#232F3E","#005A9C","#0073AA","#21759B"]
     hue_stds = []
     for hx in BRANDS:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         h_p = torch.atan2(cl[:, 2], cl[:, 1])
         hue_stds.append(_hue_cstd_torch(h_p))
@@ -438,7 +461,7 @@ def measure_user_brand_colors(space, device):
 
 def measure_user_logo_color_preservation(space, device):
     """3.4 — Distinct logo colors round-trip + tint/shade ladder ΔE."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     LOGOS = [("CocaCola","#FF0000"),("TiffanyBlue","#0BCED9"),("IKEABlue","#0051BA"),
              ("Hermes","#FF6F00"),("Twitter","#1DA1F2"),("WhatsApp","#25D366"),
              ("Spotify","#1DB954"),("Netflix","#E50914"),("Slack","#4A154B"),
@@ -446,7 +469,7 @@ def measure_user_logo_color_preservation(space, device):
     rt_des, tint_drifts = [], []
     for name, hx in LOGOS:
         # Round-trip
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         xyz_back = space.inverse(space.forward(xyz0.unsqueeze(0)))[0]
         cl0 = _xyz_to_cielab(xyz0.unsqueeze(0), d65)
         cl_b = _xyz_to_cielab(xyz_back.unsqueeze(0), d65)
@@ -467,20 +490,20 @@ def measure_user_logo_color_preservation(space, device):
 def measure_user_cinematic_lut(space, device):
     """3.5 — Cinematic LUT: CIE Lab L* lift -3 + gamma 1.15 + sat 1.1.
     PHASE 11 FIX: CIE Lab uzayında LUT uygulanır, sonra space round-trip."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     PATCHES = ["#735244","#C29682","#627A9D","#576C43","#8580B1","#67BDAA",
                "#D67E2C","#505BA6","#C15A63","#5E3C6C","#9DBC40","#E0A32E",
                "#383D96","#469449","#AF363C","#E7C71F","#BB5695","#0885A1",
                "#F3F3F2","#C8C8C8","#A0A0A0","#7A7A7A","#555555","#343434"]
     de_list = []
     for hx in PATCHES:
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         cl_orig = _xyz_to_cielab(xyz0.unsqueeze(0), d65)[0]
         L_g = ((cl_orig[0]/100.0 - 0.03).clamp(0,1).pow(1/1.15) * 1.08).clamp(0,1) * 100.0
         a_g = cl_orig[1] * 1.1; b_g = cl_orig[2] * 1.1
         C_g = float(np.hypot(a_g.item(), b_g.item()))
         h_g = float(np.degrees(np.arctan2(b_g.item(), a_g.item())) % 360)
-        xyz_target = _cielab_target_to_xyz(L_g.item(), C_g, h_g, device)
+        xyz_target = _cielab_target_to_xyz(L_g.item(), C_g, h_g, space)
         xyz_back = space.inverse(space.forward(xyz_target.unsqueeze(0)))[0]
         cl_back = _xyz_to_cielab(xyz_back.unsqueeze(0), d65)[0]
         de_list.append(ciede2000(torch.stack([L_g, a_g, b_g]).unsqueeze(0), cl_back.unsqueeze(0)).item())
@@ -495,9 +518,9 @@ def measure_user_cinematic_lut(space, device):
 def measure_user_picker_hue_continuity(space, device):
     """4.1 — Color picker hue cycle: 360° hue sweep CIE L*=60, C*=30 → ΔE smoothness.
     PHASE 11 FIX: CIE Lab hedef, uzay-bağımsız."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     L_star, C_star = 60.0, 30.0
-    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, device) for h_deg in range(0, 360, 1)]
+    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, space) for h_deg in range(0, 360, 1)]
     xyz = torch.stack(xyzs)
     cl = _xyz_to_cielab(xyz, d65)
     de_adj = ciede2000(cl[:-1], cl[1:])
@@ -511,7 +534,7 @@ def measure_user_picker_hue_continuity(space, device):
 def measure_user_picker_chroma_envelope(space, device):
     """4.2 — Color picker chroma envelope at CIE L*=60. Max C* reachable in sRGB.
     PHASE 11 FIX: CIE Lab L*=60 hedef (uzay-bağımsız anchor)."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     L_star = 60.0
     msi = torch.linalg.inv(ms)
     max_Cs = []
@@ -520,7 +543,7 @@ def measure_user_picker_chroma_envelope(space, device):
         C_lo, C_hi = 0.0, 150.0
         for _ in range(20):
             C_t = (C_lo + C_hi) / 2
-            xyz_target = _cielab_target_to_xyz(L_star, C_t, h_deg, device)
+            xyz_target = _cielab_target_to_xyz(L_star, C_t, h_deg, space)
             rgb_lin = msi @ xyz_target
             if torch.all((rgb_lin >= -0.001) & (rgb_lin <= 1.001)):
                 C_lo = C_t
@@ -535,10 +558,10 @@ def measure_user_picker_chroma_envelope(space, device):
 def measure_user_achromatic_visual(space, device):
     """4.3 — JND-aware achromatic test: gri ekseni chroma değeri × düz çizgi mi.
     Pure D65 grays, measure CIE Lab chroma."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     chs = []
     for i in [25, 50, 75, 100, 125, 150, 175, 200, 225, 250]:
-        rgb = torch.tensor([i/255]*3, device=device, dtype=torch.float64)
+        rgb = torch.tensor([i/255]*3, device=space.device, dtype=space.dtype)
         xyz = ms @ _srgb_to_lin(rgb)
         lab = space.forward(xyz.unsqueeze(0))[0]
         # Convert through space and back to CIE Lab to measure visible chroma
@@ -552,7 +575,7 @@ def measure_user_achromatic_visual(space, device):
 def measure_user_hue_wheel_uniformity(space, device):
     """4.4 — Saturated hue wheel: 16 evenly-spaced hue at CIE L*=60, C*=30.
     PHASE 11 FIX: CIE Lab hedef. Hue wheel'de gap CV — color wheel UI uniformity."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     L_star, C_star = 60.0, 30.0
     n_hues = 16
     cl_hues = []
@@ -562,7 +585,7 @@ def measure_user_hue_wheel_uniformity(space, device):
         # Bu metrik artık trivial: CIE Lab hedefiyle hep uniform → space-agnostic
         # YANİ tüm uzaylar identik sonuç verir, kaldırılabilir.
         # Yine de raporlayalım: hue uniformity düz CIE Lab'da measure
-        xyz = _cielab_target_to_xyz(L_star, C_star, h_deg, device)
+        xyz = _cielab_target_to_xyz(L_star, C_star, h_deg, space)
         cl = _xyz_to_cielab(xyz.unsqueeze(0), d65)[0]
         cl_hues.append(torch.atan2(cl[2], cl[1]).item())
     # Compute angle gaps in CIE Lab
@@ -582,9 +605,9 @@ def measure_user_hue_wheel_uniformity(space, device):
 def measure_user_cvd_palette_spacing(space, device):
     """5.1 — 8-color CIE L*=60, C*=30 categorical palette × 3 CVD type × min pairwise ΔE.
     PHASE 11 FIX: CIE Lab hedef (uzay-bağımsız). Brettel CVD."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     L_star, C_star = 60.0, 30.0
-    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, device) for h_deg in range(0, 360, 45)]
+    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, space) for h_deg in range(0, 360, 45)]
     xyz = torch.stack(xyzs)
     # Get sRGB
     msi = torch.linalg.inv(ms)
@@ -592,11 +615,11 @@ def measure_user_cvd_palette_spacing(space, device):
     rgb = _lin_to_srgb(rgb_lin)
     # CVD matrices (Machado 2009 deuteranomaly / protanomaly / tritanomaly severity 1.0)
     M_deu = torch.tensor([[0.367322,0.860646,-0.227968],[0.280085,0.672501,0.047413],
-                          [-0.011820,0.042940,0.968881]], device=device, dtype=torch.float64)
+                          [-0.011820,0.042940,0.968881]], device=space.device, dtype=space.dtype)
     M_pro = torch.tensor([[0.152286,1.052583,-0.204868],[0.114503,0.786281,0.099216],
-                          [-0.003882,-0.048116,1.051998]], device=device, dtype=torch.float64)
+                          [-0.003882,-0.048116,1.051998]], device=space.device, dtype=space.dtype)
     M_tri = torch.tensor([[1.255528,-0.076749,-0.178779],[-0.078411,0.930809,0.147602],
-                          [0.004733,0.691367,0.303900]], device=device, dtype=torch.float64)
+                          [0.004733,0.691367,0.303900]], device=space.device, dtype=space.dtype)
     cvd_results = {}
     for name, M in [("deutan", M_deu), ("protan", M_pro), ("tritan", M_tri)]:
         rgb_cvd = (rgb_lin @ M.T).clamp(0, 1)
@@ -615,7 +638,7 @@ def measure_user_cvd_palette_spacing(space, device):
 def measure_user_low_vision_contrast(space, device):
     """5.2 — Low-vision contrast: text-on-background pairs × WCAG ratio preserved.
     Tests fg/bg pairs designers commonly use, measures contrast ratio in space's L axis."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     PAIRS = [
         ("white on dark blue",  "#FFFFFF", "#1E3A8A"),
         ("yellow on black",     "#FBBF24", "#000000"),
@@ -627,8 +650,8 @@ def measure_user_low_vision_contrast(space, device):
     ]
     L_diffs = []
     for name, fg, bg in PAIRS:
-        xyz_fg = _hex_xyz(fg, ms, device)
-        xyz_bg = _hex_xyz(bg, ms, device)
+        xyz_fg = _hex_xyz(fg, ms, space)
+        xyz_bg = _hex_xyz(bg, ms, space)
         L_fg = float(space.forward(xyz_fg.unsqueeze(0))[0, 0].item())
         L_bg = float(space.forward(xyz_bg.unsqueeze(0))[0, 0].item())
         L_diffs.append(abs(L_fg - L_bg))
@@ -640,7 +663,7 @@ def measure_user_low_vision_contrast(space, device):
 def measure_user_color_blind_safe_palettes(space, device):
     """5.3 — Bilinen CVD-safe palette'ler (Wong 2011, Tol et al, Okabe-Ito) × 3 CVD test.
     Min pairwise ΔE in deutan + protan + tritan."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     # Okabe-Ito 8-color palette (Wong 2011 standard CVD-safe)
     PALETTES = {
         "Okabe-Ito": ["#000000","#E69F00","#56B4E9","#009E73","#F0E442","#0072B2","#D55E00","#CC79A7"],
@@ -648,14 +671,14 @@ def measure_user_color_blind_safe_palettes(space, device):
         "Wong":      ["#000000","#E69F00","#56B4E9","#009E73","#F0E442","#0072B2","#D55E00","#CC79A7"],
     }
     M_deu = torch.tensor([[0.367322,0.860646,-0.227968],[0.280085,0.672501,0.047413],
-                          [-0.011820,0.042940,0.968881]], device=device, dtype=torch.float64)
+                          [-0.011820,0.042940,0.968881]], device=space.device, dtype=space.dtype)
     msi = torch.linalg.inv(ms)
     pal_min_de = {}
     for pal_name, hex_list in PALETTES.items():
         # Get linear sRGB
         rgb_lin_arr = []
         for hx in hex_list:
-            xyz0 = _hex_xyz(hx, ms, device)
+            xyz0 = _hex_xyz(hx, ms, space)
             xyz_back = space.inverse(space.forward(xyz0.unsqueeze(0)))[0]
             rgb_lin_arr.append((msi @ xyz_back).clamp(0, 1))
         rgb_lin = torch.stack(rgb_lin_arr)
@@ -676,7 +699,7 @@ def measure_user_color_blind_safe_palettes(space, device):
 
 def measure_user_p3_wide_gamut(space, device):
     """6.1 — sRGB ⊂ Display P3 round-trip + P3-only colors mapping quality."""
-    ms = _to(_M_SRGB, device); mp3 = _to(_M_P3, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); mp3 = _to(_M_P3, space); d65 = _to(D65, space)
     # 12 P3-only saturated colors
     P3_ONLY = [
         [1,0,0],[0,1,0],[0,0,1],[1,1,0],[0,1,1],[1,0,1],
@@ -684,7 +707,7 @@ def measure_user_p3_wide_gamut(space, device):
     ]
     rt_des = []
     for rgb in P3_ONLY:
-        rgb_t = torch.tensor(rgb, device=device, dtype=torch.float64)
+        rgb_t = torch.tensor(rgb, device=space.device, dtype=space.dtype)
         xyz_p3 = mp3 @ _srgb_to_lin(rgb_t)
         # Through space
         xyz_back = space.inverse(space.forward(xyz_p3.unsqueeze(0)))[0]
@@ -696,11 +719,11 @@ def measure_user_p3_wide_gamut(space, device):
 
 def measure_user_rec2020_hdr_gamut(space, device):
     """6.2 — Rec.2020 HDR-style gamut round-trip + extreme chroma stability."""
-    ms = _to(_M_SRGB, device); mr = _to(_M_REC2020, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); mr = _to(_M_REC2020, space); d65 = _to(D65, space)
     REC_ONLY = [[1,0,0],[0,1,0],[0,0,1],[1,1,0],[0,1,1],[1,0,1]]
     rt_des = []
     for rgb in REC_ONLY:
-        rgb_t = torch.tensor(rgb, device=device, dtype=torch.float64)
+        rgb_t = torch.tensor(rgb, device=space.device, dtype=space.dtype)
         xyz_r = mr @ _srgb_to_lin(rgb_t)
         xyz_back = space.inverse(space.forward(xyz_r.unsqueeze(0)))[0]
         cl0 = _xyz_to_cielab(xyz_r.unsqueeze(0), d65)
@@ -712,7 +735,7 @@ def measure_user_rec2020_hdr_gamut(space, device):
 def measure_user_display_calibration_drift(space, device):
     """6.3 — Slight γ drift sensitivity. Display calibration ±5% γ değişimi
     Helmgen vs OKLab nasıl etkilenir."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     # 24 Macbeth patch
     PATCHES = ["#735244","#C29682","#627A9D","#576C43","#8580B1","#67BDAA",
                "#D67E2C","#505BA6","#C15A63","#5E3C6C","#9DBC40","#E0A32E",
@@ -721,7 +744,7 @@ def measure_user_display_calibration_drift(space, device):
     de_drifts = []
     for hx in PATCHES:
         h = hx.lstrip("#")
-        rgb = torch.tensor([int(h[i:i+2],16)/255 for i in (0,2,4)], device=device, dtype=torch.float64)
+        rgb = torch.tensor([int(h[i:i+2],16)/255 for i in (0,2,4)], device=space.device, dtype=space.dtype)
         xyz_orig = ms @ _srgb_to_lin(rgb)
         # +5% gamma drift
         rgb_drift = rgb.pow(1.05)
@@ -740,9 +763,9 @@ def measure_user_display_calibration_drift(space, device):
 
 def measure_user_8bit_quantization(space, device):
     """6.4 — 8-bit reproduction quality: smooth gradient × 8-bit quantize × banding."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     # Smooth blue→white gradient 256 stops, quantize to 8-bit, measure banding
-    xyz1 = _hex_xyz("#0000FF", ms, device); xyz2 = _hex_xyz("#FFFFFF", ms, device)
+    xyz1 = _hex_xyz("#0000FF", ms, space); xyz2 = _hex_xyz("#FFFFFF", ms, space)
     xyz_path = _gradient_lab(xyz1, xyz2, 256, space, device)
     # Convert to sRGB and quantize
     msi = torch.linalg.inv(ms)
@@ -767,7 +790,7 @@ def measure_user_8bit_quantization(space, device):
 
 def measure_user_hover_state_transition(space, device):
     """7.1 — 8 hover state transition × CV uniformity (60fps × 200ms = 12 frame)."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     HOVER = [
         ("blue",   "#3B82F6","#1D4ED8"),
         ("red",    "#EF4444","#B91C1C"),
@@ -780,7 +803,7 @@ def measure_user_hover_state_transition(space, device):
     ]
     cvs = []
     for name, h1, h2 in HOVER:
-        xyz_path = _gradient_lab(_hex_xyz(h1, ms, device), _hex_xyz(h2, ms, device), 12, space, device)
+        xyz_path = _gradient_lab(_hex_xyz(h1, ms, space), _hex_xyz(h2, ms, space), 12, space, device)
         cl = _xyz_to_cielab(xyz_path, d65)
         de = ciede2000(cl[:-1], cl[1:])
         cvs.append(_cv(de))
@@ -789,15 +812,15 @@ def measure_user_hover_state_transition(space, device):
 
 def measure_user_focus_ring_quality(space, device):
     """7.2 — Focus ring color vs background hue distinction (8 background × focus ring color)."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     # Standard focus blue + 8 different background colors
     FOCUS = "#3B82F6"
     BACKGROUNDS = ["#FFFFFF","#F3F4F6","#1F2937","#000000","#FEF3C7",
                    "#DBEAFE","#FCE7F3","#D1FAE5"]
     de_distinct = []
     for bg_hex in BACKGROUNDS:
-        xyz_focus = _hex_xyz(FOCUS, ms, device)
-        xyz_bg = _hex_xyz(bg_hex, ms, device)
+        xyz_focus = _hex_xyz(FOCUS, ms, space)
+        xyz_bg = _hex_xyz(bg_hex, ms, space)
         xyz_focus_b = space.inverse(space.forward(xyz_focus.unsqueeze(0)))[0]
         xyz_bg_b = space.inverse(space.forward(xyz_bg.unsqueeze(0)))[0]
         cl_f = _xyz_to_cielab(xyz_focus_b.unsqueeze(0), d65)
@@ -809,17 +832,17 @@ def measure_user_focus_ring_quality(space, device):
 def measure_user_dark_mode_flip(space, device):
     """7.3 — 12 light token × CIE L* invert × hue preservation.
     PHASE 11 FIX: CIE Lab L* invert (uzay-bağımsız)."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     LIGHT = ["#3B82F6","#EF4444","#22C55E","#F59E0B","#A855F7","#14B8A6",
              "#F43F5E","#0EA5E9","#8B5CF6","#06B6D4","#EAB308","#EC4899"]
     hue_drifts = []
     for hx in LIGHT:
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         cl_orig = _xyz_to_cielab(xyz0.unsqueeze(0), d65)[0]
         L_dark = 100.0 - cl_orig[0].item()
         C_orig = float(np.hypot(cl_orig[1].item(), cl_orig[2].item()))
         h_orig = float(np.degrees(np.arctan2(cl_orig[2].item(), cl_orig[1].item())) % 360)
-        xyz_dark = _cielab_target_to_xyz(L_dark, C_orig, h_orig, device)
+        xyz_dark = _cielab_target_to_xyz(L_dark, C_orig, h_orig, space)
         xyz_back = space.inverse(space.forward(xyz_dark.unsqueeze(0)))[0]
         cl_back = _xyz_to_cielab(xyz_back.unsqueeze(0), d65)[0]
         h_back = float(np.degrees(np.arctan2(cl_back[2].item(), cl_back[1].item())) % 360)
@@ -837,20 +860,20 @@ def measure_user_dark_mode_flip(space, device):
 def measure_user_print_cmyk_fidelity(space, device):
     """8.1 — CMYK gamut simulate: CIE C*=80% cap (CMYK < sRGB gamut).
     PHASE 11 FIX: CIE Lab C* uzayında cap (uzay-bağımsız), space round-trip."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     PATCHES = ["#735244","#C29682","#627A9D","#576C43","#8580B1","#67BDAA",
                "#D67E2C","#505BA6","#C15A63","#5E3C6C","#9DBC40","#E0A32E",
                "#383D96","#469449","#AF363C","#E7C71F","#BB5695","#0885A1",
                "#F3F3F2","#C8C8C8","#A0A0A0","#7A7A7A","#555555","#343434"]
     de_list = []
     for hx in PATCHES:
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         cl_orig = _xyz_to_cielab(xyz0.unsqueeze(0), d65)[0]
         # CMYK gamut: cap C* to 80%
         C_orig = float(np.hypot(cl_orig[1].item(), cl_orig[2].item()))
         h_orig = float(np.degrees(np.arctan2(cl_orig[2].item(), cl_orig[1].item())) % 360)
         C_cap = C_orig * 0.8
-        xyz_cmyk = _cielab_target_to_xyz(cl_orig[0].item(), C_cap, h_orig, device)
+        xyz_cmyk = _cielab_target_to_xyz(cl_orig[0].item(), C_cap, h_orig, space)
         # Space round-trip
         xyz_back = space.inverse(space.forward(xyz_cmyk.unsqueeze(0)))[0]
         cl_target = _xyz_to_cielab(xyz_cmyk.unsqueeze(0), d65)
@@ -862,7 +885,7 @@ def measure_user_print_cmyk_fidelity(space, device):
 def measure_user_pantone_spot(space, device):
     """8.2 — Pantone spot color reproduction × 12 popüler Pantone.
     Spot color hex'leri × roundtrip ΔE2000."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     PANTONES = [
         ("PMS_185_red",       "#E4002B"),
         ("PMS_286_blue",      "#0033A0"),
@@ -879,7 +902,7 @@ def measure_user_pantone_spot(space, device):
     ]
     de_rt = []
     for name, hx in PANTONES:
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         xyz_back = space.inverse(space.forward(xyz0.unsqueeze(0)))[0]
         cl0 = _xyz_to_cielab(xyz0.unsqueeze(0), d65)
         cl_b = _xyz_to_cielab(xyz_back.unsqueeze(0), d65)
@@ -890,7 +913,7 @@ def measure_user_pantone_spot(space, device):
 def measure_user_hdr_tone_mapping(space, device):
     """8.3 — HDR tone mapping (Reinhard) × bright HDR colors.
     HDR colors (linear > 1.0) → Reinhard tone map → display ΔE."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     # Simulate HDR colors at 200, 400, 1000 nits relative
     HDR_PEAKS = [
         ("hdr_red_200",    [2.0, 0.0, 0.0]),
@@ -904,9 +927,9 @@ def measure_user_hdr_tone_mapping(space, device):
     for name, hdr_lin in HDR_PEAKS:
         # Reinhard: x / (1 + x)
         sdr_lin = torch.tensor([v/(1+v) for v in hdr_lin],
-                                device=device, dtype=torch.float64)
+                                device=space.device, dtype=space.dtype)
         # In space
-        xyz_hdr = ms @ torch.tensor(hdr_lin, device=device, dtype=torch.float64)
+        xyz_hdr = ms @ torch.tensor(hdr_lin, device=space.device, dtype=space.dtype)
         xyz_sdr = ms @ sdr_lin
         # Compare hue preservation (ratio shouldn't change too much)
         cl_hdr = _xyz_to_cielab(xyz_hdr.unsqueeze(0), d65)[0]
@@ -922,15 +945,15 @@ def measure_user_hdr_tone_mapping(space, device):
 def measure_user_cvd_tritanomaly(space, device):
     """8.4 — Tritanomaly CVD spacing: 8-color CIE L*=60, C*=30 × tritan.
     PHASE 11 FIX: CIE Lab hedef (uzay-bağımsız), Machado 2009 tritan."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     L_star, C_star = 60.0, 30.0
-    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, device) for h_deg in range(0, 360, 45)]
+    xyzs = [_cielab_target_to_xyz(L_star, C_star, h_deg, space) for h_deg in range(0, 360, 45)]
     xyz = torch.stack(xyzs)
     msi = torch.linalg.inv(ms)
     rgb_lin = (xyz @ msi.T).clamp(0, 1)
     # Machado 2009 tritanomaly severity 1.0
     M_tri = torch.tensor([[1.255528,-0.076749,-0.178779],[-0.078411,0.930809,0.147602],
-                          [0.004733,0.691367,0.303900]], device=device, dtype=torch.float64)
+                          [0.004733,0.691367,0.303900]], device=space.device, dtype=space.dtype)
     rgb_cvd = (rgb_lin @ M_tri.T).clamp(0, 1)
     xyz_cvd = ms @ rgb_cvd.T
     cl = _xyz_to_cielab(xyz_cvd.T, d65)
@@ -944,13 +967,13 @@ def measure_user_cvd_tritanomaly(space, device):
 def measure_user_newsprint_simulation(space, device):
     """8.5 — Newsprint paper: CIE L* compress (5-85) + C* cap %60.
     PHASE 11 FIX: CIE Lab uzayında uygulanır."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     PATCHES = ["#735244","#C29682","#627A9D","#576C43","#8580B1","#67BDAA",
                "#D67E2C","#505BA6","#C15A63","#5E3C6C","#9DBC40","#E0A32E",
                "#383D96","#469449","#AF363C","#E7C71F","#BB5695","#0885A1"]
     de_list = []
     for hx in PATCHES:
-        xyz0 = _hex_xyz(hx, ms, device)
+        xyz0 = _hex_xyz(hx, ms, space)
         cl_orig = _xyz_to_cielab(xyz0.unsqueeze(0), d65)[0]
         # Newsprint: CIE L* 0-100 → 5-85 compress + C* %60 cap
         L_compr = float((cl_orig[0].item() * 0.80 + 5.0))
@@ -958,7 +981,7 @@ def measure_user_newsprint_simulation(space, device):
         C_orig = float(np.hypot(cl_orig[1].item(), cl_orig[2].item()))
         h_orig = float(np.degrees(np.arctan2(cl_orig[2].item(), cl_orig[1].item())) % 360)
         C_cap = C_orig * 0.6
-        xyz_print = _cielab_target_to_xyz(L_compr, C_cap, h_orig, device)
+        xyz_print = _cielab_target_to_xyz(L_compr, C_cap, h_orig, space)
         xyz_back = space.inverse(space.forward(xyz_print.unsqueeze(0)))[0]
         cl_target = _xyz_to_cielab(xyz_print.unsqueeze(0), d65)
         cl_back = _xyz_to_cielab(xyz_back.unsqueeze(0), d65)
@@ -969,7 +992,7 @@ def measure_user_newsprint_simulation(space, device):
 def measure_user_cross_cultural_skin(space, device):
     """8.6 — Cross-cultural skin tones beyond Fitzpatrick (Asian, African, mixed).
     12 specific cultural skin tones × 11-shade tone scale × hue stability."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     SKIN = [
         ("east_asian_light",  "#F1D9C0"),
         ("east_asian_warm",   "#E8C19A"),
@@ -986,7 +1009,7 @@ def measure_user_cross_cultural_skin(space, device):
     ]
     hue_stds = []
     for name, hx in SKIN:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         h_p = torch.atan2(cl[:, 2], cl[:, 1])
         hue_stds.append(_hue_cstd_torch(h_p))
@@ -998,17 +1021,17 @@ def measure_user_glassmorphism(space, device):
     PHASE 11 FIX: Ground truth GAMMA-CORRECT sRGB blend (browser default
     `mix-blend-mode: normal` linear-light değil, ama bu en yaygın behavior).
     Ölçü: uzayda Lab mix → CIE Lab vs gamma-correct ground truth."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     BG = ["#3B82F6", "#FF6B6B", "#22C55E", "#1E293B", "#FBBF24"]
     OVERLAY = "#FFFFFF"
     de_alpha = []
     overlay_h = OVERLAY.lstrip("#")
     overlay_rgb = torch.tensor([int(overlay_h[i:i+2],16)/255 for i in (0,2,4)],
-                                device=device, dtype=torch.float64)
+                                device=space.device, dtype=space.dtype)
     for bg_hex in BG:
         bg_h = bg_hex.lstrip("#")
         bg_rgb = torch.tensor([int(bg_h[i:i+2],16)/255 for i in (0,2,4)],
-                               device=device, dtype=torch.float64)
+                               device=space.device, dtype=space.dtype)
         for alpha in [0.2, 0.4, 0.6, 0.8]:
             # Ground truth: gamma-correct sRGB linear blend (browser default)
             bg_lin = _srgb_to_lin(bg_rgb); ov_lin = _srgb_to_lin(overlay_rgb)
@@ -1030,7 +1053,7 @@ def measure_user_glassmorphism(space, device):
 def measure_user_status_indicator_distinct(space, device):
     """8.8 — Status indicator distinctness: error/warning/success/info ayırt edilebilirlik.
     4 standard status × pairwise min ΔE × CVD-aware (deutan)."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     STATUS = {
         "error":   "#DC2626",
         "warning": "#F59E0B",
@@ -1039,11 +1062,11 @@ def measure_user_status_indicator_distinct(space, device):
     }
     msi = torch.linalg.inv(ms)
     M_deu = torch.tensor([[0.367322,0.860646,-0.227968],[0.280085,0.672501,0.047413],
-                          [-0.011820,0.042940,0.968881]], device=device, dtype=torch.float64)
+                          [-0.011820,0.042940,0.968881]], device=space.device, dtype=space.dtype)
     cl_arr = []
     cl_deu_arr = []
     for name, hx in STATUS.items():
-        xyz = _hex_xyz(hx, ms, device)
+        xyz = _hex_xyz(hx, ms, space)
         xyz_b = space.inverse(space.forward(xyz.unsqueeze(0)))[0]
         cl = _xyz_to_cielab(xyz_b.unsqueeze(0), d65)[0]
         cl_arr.append(cl)
@@ -1070,7 +1093,7 @@ def measure_user_real_photo_macbeth(space, device):
     Round-trip her ikisinde 0 olduğu için (bilgisiz) bunun yerine her patch'i seed
     olarak kullanıp tone scale üret + hue circular std + step CV."""
     import colour
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     CHECKERS = ["BabelColor Average", "ColorChecker N Ohta", "ColorChecker 2005",
                 "ColorChecker24 - After November 2014", "ISO 17321-1"]
     hue_stds, step_cvs = [], []
@@ -1082,7 +1105,7 @@ def measure_user_real_photo_macbeth(space, device):
             x, y, Y = xyY[0], xyY[1], xyY[2]
             if y <= 0: continue
             X = (x/y)*Y; Z = ((1-x-y)/y)*Y
-            xyz_seed = torch.tensor([X, Y, Z], device=device, dtype=torch.float64)
+            xyz_seed = torch.tensor([X, Y, Z], device=space.device, dtype=space.dtype)
             try:
                 xyz_path = _tone_scale_in_space(xyz_seed, space, device, 11)
                 cl = _xyz_to_cielab(xyz_path, d65)
@@ -1102,12 +1125,12 @@ def measure_user_jnd_aware_summary(space, device):
     """11.2 — JND-aware: gerçek görev ΔE'leri above/below JND breakdown.
     12 popüler renk × 11-shade tone scale × her step ΔE'sini topla.
     Sub-JND ΔE = matematiksel kazanım, görsel sıfır."""
-    ms = _to(_M_SRGB, device); d65 = _to(D65, device)
+    ms = _to(_M_SRGB, space); d65 = _to(D65, space)
     SEEDS = ["#3B82F6","#EF4444","#22C55E","#F59E0B","#A855F7","#14B8A6",
              "#F43F5E","#0EA5E9","#8B5CF6","#06B6D4","#EAB308","#EC4899"]
     all_des = []
     for hx in SEEDS:
-        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, device), space, device, 11)
+        xyz_path = _tone_scale_in_space(_hex_xyz(hx, ms, space), space, device, 11)
         cl = _xyz_to_cielab(xyz_path, d65)
         de = ciede2000(cl[:-1], cl[1:])
         all_des.extend([d.item() for d in de])

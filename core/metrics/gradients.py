@@ -38,6 +38,8 @@ def _gradient_chunk(space, pair_xyz_chunk, S, ms, msi, d65):
     No .item() calls — synced at outer level.
     """
     nc = pair_xyz_chunk.shape[0]
+    # Cast pair tensor to space's dtype/device — pairs.py creates float64 CPU.
+    pair_xyz_chunk = pair_xyz_chunk.to(device=space.device, dtype=space.dtype)
     lab1 = space.forward(pair_xyz_chunk[:, 0])
     lab2 = space.forward(pair_xyz_chunk[:, 1])
 
@@ -197,8 +199,9 @@ def measure_gradients(space, pairs_xyz, pair_labels, device=None, n_steps=26) ->
         })
 
     # Subset CVs use the test space's own Lab to filter pairs
-    lab1_all = space.forward(pairs_xyz[:, 0])
-    lab2_all = space.forward(pairs_xyz[:, 1])
+    pairs_for_subset = pairs_xyz.to(device=space.device, dtype=space.dtype)
+    lab1_all = space.forward(pairs_for_subset[:, 0])
+    lab2_all = space.forward(pairs_for_subset[:, 1])
 
     overall = _overall_stats(cvs, drift_max, is_crossing, banding, N)
     overall.update(_subset_cvs(cvs, lab1_all, lab2_all))
