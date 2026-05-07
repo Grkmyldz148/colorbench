@@ -1,17 +1,7 @@
-"""Independent third-party benchmark metrics.
+"""DEPRECATED — use core.metrics (refactored 2026-05-07).
 
-Uses published psychophysical datasets that Helmlab was NOT optimized on:
-  - Hung & Berns (1995): Constant hue loci — THE standard hue linearity test.
-    OKLab was explicitly optimized on this dataset.
-  - Ebner & Fairchild (1998): Constant perceived-hue surfaces.
-    IPT was derived from this; OKLab partially based on it.
-  - Pointer (1980): Gamut of real surface colors.
-    Tests gamut distortion and boundary smoothness.
-
-Sources:
-  Hung & Berns: Color Res Appl 20(5), 285-295. Zenodo 3367463.
-  Ebner & Fairchild: CIC 6 (1998). Zenodo 3362536.
-  Pointer: Color Res Appl 5(3), 145-155 (1980).
+Hung & Berns / Ebner & Fairchild / Pointer ported to core/metrics/independent.py.
+For new code: `from core.metrics import measure_hung_berns, ...`
 """
 
 import json

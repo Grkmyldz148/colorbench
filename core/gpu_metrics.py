@@ -1,9 +1,16 @@
-"""GPU-batched metrics for color space evaluation.
+"""DEPRECATED — use core.metrics (refactored 2026-05-07).
 
-Comprehensive: tests every sRGB color, 100K+ gradient pairs,
-3 gamuts (sRGB, P3, Rec.2020), gamut mapping, banding.
+All 8 measure_* functions ported to focused modules:
+  measure_roundtrip       → core/metrics/roundtrip.py
+  measure_achromatic      → core/metrics/achromatic.py
+  measure_gradients       → core/metrics/gradients.py
+  measure_gamut           → core/metrics/gamut.py
+  measure_gamut_mapping   → core/metrics/gamut_mapping.py
+  measure_hue, measure_special_gradients → core/metrics/hue.py
+  measure_stability       → core/metrics/stability.py
 
-Zero per-sample Python loops. All tensor operations.
+For new code: `from core.metrics import measure_roundtrip, ...`
+This file kept as-is for backward compatibility.
 """
 
 import math

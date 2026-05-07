@@ -18,7 +18,7 @@ import math
 import torch
 
 from .base import ColorSpace
-from ..spaces import D65  # legacy spaces.py constant
+from .constants import D65
 
 
 # ═════════════════════════════════════════════════════════════════════════════

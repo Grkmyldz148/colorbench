@@ -1,6 +1,9 @@
-"""Advanced GPU-batched metrics — CVD, animation, Munsell, extremes, Jacobian, contrast.
+"""DEPRECATED — use core.metrics (refactored 2026-05-07).
 
-These complement the base metrics in gpu_metrics.py.
+All 17 advanced measure_* functions ported to focused modules under
+core/metrics/. See core/metrics/__init__.py for the public API.
+
+For new code: `from core.metrics import measure_cvd, measure_animation, ...`
 """
 
 import math

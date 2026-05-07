@@ -1,6 +1,9 @@
-"""Perceptual uniformity & application metrics — ported from scripts/benchmark.
+"""DEPRECATED — use core.metrics (refactored 2026-05-07).
 
-13 measure_* functions, all torch-based, following gpu_metrics_advanced.py pattern.
+All 14 perceptual measure_* functions ported to focused modules under
+core/metrics/.
+
+For new code: `from core.metrics import measure_munsell_value, ...`
 """
 
 import math

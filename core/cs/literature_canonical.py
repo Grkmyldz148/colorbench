@@ -19,7 +19,7 @@ import torch
 import colour
 
 from .base import ColorSpace
-from ..spaces import D65  # legacy spaces.py constant
+from .constants import D65
 
 D65_XYZ = np.array([0.95047, 1.0, 1.08883])
 D65_XY = D65_XYZ[:2] / D65_XYZ.sum()

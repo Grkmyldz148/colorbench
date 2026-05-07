@@ -8,6 +8,7 @@ Usage:
     sp = OKLab(device=device, dtype=torch.float64)
 """
 from .base import ColorSpace, signed_cbrt, signed_cube
+from .constants import D65, M_SRGB
 from .oklab import OKLab, OKLab32
 from .cielab import CIELab
 from .pwL import PiecewiseLinearL
@@ -28,6 +29,8 @@ __all__ = [
     "ColorSpace",
     "signed_cbrt",
     "signed_cube",
+    "D65",
+    "M_SRGB",
     "OKLab",
     "OKLab32",
     "CIELab",

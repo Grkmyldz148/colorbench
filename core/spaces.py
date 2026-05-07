@@ -1,9 +1,22 @@
-"""Color space adapters — unified GPU tensor interface.
+"""DEPRECATED — use core.cs (refactored 2026-05-07).
 
-Any color space that implements forward(XYZ→Lab) and inverse(Lab→XYZ)
-can be tested. The test engine only sees these two functions.
+This monolithic file is the pre-refactor implementation. All public spaces
+have been ported to focused modules:
 
-Built-in: OKLab, CIE Lab. External: GenSpace (via helmlab), Custom.
+  OKLab, OKLab32                    → core/cs/oklab.py
+  CIELab                            → core/cs/cielab.py
+  HelmCT                            → core/cs/helmct.py + transfer/pwL/enrichment/neutral
+  GenSpaceAdapter, NakaRushtonEnriched, GenSpaceEnriched, GenSpaceBlueFix,
+    NonlinearM1, CustomSpace        → core/cs/genspace_legacy.py
+  D65, M_SRGB constants             → core/cs/constants.py
+
+Spaces still living here only (not yet ported, used in research scripts):
+  HueDep, NativePolar, PolarBlend, TwoStage
+
+For new code: `from core.cs import OKLab, HelmCT, ...`
+For research scripts that still import from here: keep working until cleanup.
+
+This file's content is preserved verbatim for backward compatibility.
 """
 
 from abc import ABC, abstractmethod

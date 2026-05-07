@@ -20,7 +20,7 @@ Total: 29 measure_user_* fonksiyonu
 import torch
 import numpy as np
 
-from ..spaces import D65  # legacy spaces.py constant
+from ..cs import D65
 from ..gpu_de import ciede2000
 
 PI = np.pi

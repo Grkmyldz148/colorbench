@@ -1,15 +1,9 @@
-"""Literature color spaces — benchmarking scan.
+"""DEPRECATED — use core.cs (refactored 2026-05-07).
 
-Five published color spaces implemented to the ColorBench `ColorSpace` interface:
-  1. IPT        (Ebner & Fairchild 1998)
-  2. JzAzBz     (Safdar, Cui, Kim, Luo 2017)
-  3. ICtCp      (Dolby / ITU-R BT.2100)
-  4. CAM16-UCS  (Li, Li, Wang, Luo 2017; Jab form)  — may fall back to DIN99d
-  5. DIN99d     (Cui et al. 2002; German standard extension)
+5 literature spaces (IPT/JzAzBz/ICtCp/CAM16UCS/DIN99d) ported to
+core/cs/literature.py.
 
-Each forward: XYZ (N,3) → Lab-like (N,3), float64.
-Each inverse: Lab-like (N,3) → XYZ  (N,3), float64.
-XYZ convention: D65 white at Y=1 (i.e. [0.95047, 1.0, 1.08883]).
+For new code: `from core.cs import IPT, JzAzBz, ...`
 """
 
 from __future__ import annotations

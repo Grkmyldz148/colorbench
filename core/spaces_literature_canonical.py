@@ -1,16 +1,7 @@
-"""Canonical literature spaces — colour-science wrapper'lar.
+"""DEPRECATED — use core.cs (refactored 2026-05-07).
 
-ColorBench `spaces_literature.py`'daki implementations Helmlab paper için
-tuned (4-decimal matrices, custom luminance scales, vs). Bu modül **AYNI
-isimle** colour-science'a delegate eden bit-identical versiyonları sunar.
-
-Kullanım:
-  - Paper baseline doğrulama: bu modülü kullan (canonical/colour-science)
-  - ColorBench-tuned numbers: orijinal `spaces_literature.py` kullan
-
-Trade-off: Bu wrapper'lar tensor → numpy → colour-science → tensor
-olduğu için PyTorch GPU avantajı yok; CPU'da çalışır. ColorBench
-90-metric pipeline'da nadir kullanım için yeterli.
+4 canonical wrappers ported to core/cs/literature_canonical.py.
+For new code: `from core.cs import IPTCanonical, ...`
 """
 from __future__ import annotations
 

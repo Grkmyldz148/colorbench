@@ -1,21 +1,7 @@
-"""ColorBench end-user perceptual benchmark — kapsamlı 29 test.
+"""DEPRECATED — use core.metrics.user_full (refactored 2026-05-07).
 
-7 kategori × tüm gerçek görsel görevler:
-  Image-based (4)   — synthetic/photo gradient, color grading, white balance, natural scene
-  Palette (6)       — Tailwind/Material/diverging/sequential/categorical/theme dark
-  Domain (5)        — skin tone, natural colors, brands, logos, cinematic LUT
-  Picker UX (4)     — hue continuity, chroma envelope, achromatic, hue wheel
-  Accessibility (3) — CVD spacing, low-vision contrast, color-blind safe
-  Display (4)       — P3, Rec2020, HDR, 8-bit quantization
-  State (3)         — hover, focus, dark mode flip
-
-Her metric:
-  - colour-science ground truth (CIE Lab + ΔE2000)
-  - Deterministic (sabit seed where applicable)
-  - Adil (her uzaya aynı algoritma)
-  - Returns dict with named scalar metrics
-
-Total: 29 measure_user_* fonksiyonu
+39 measure_user_* fonksiyonu drop-in port edildi: core/metrics/user_full.py.
+For new code: `from core.metrics import measure_user_image_synthetic_gradient, ...`
 """
 import torch
 import numpy as np
