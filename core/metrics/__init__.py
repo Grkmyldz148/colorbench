@@ -33,6 +33,9 @@ from .hue_reversal import measure_hue_reversal
 from .primary_disc import measure_primary_hue_discontinuity
 from .negative_lms import measure_negative_lms
 from .extreme_chroma import measure_extreme_chroma_stability
+from .independent import (
+    measure_hung_berns, measure_ebner_fairchild, measure_pointer_gamut,
+)
 
 __all__ = [
     "measure_roundtrip",
@@ -74,4 +77,7 @@ __all__ = [
     "measure_primary_hue_discontinuity",
     "measure_negative_lms",
     "measure_extreme_chroma_stability",
+    "measure_hung_berns",
+    "measure_ebner_fairchild",
+    "measure_pointer_gamut",
 ]
