@@ -24,6 +24,15 @@ from .contrast import measure_contrast
 from .hue_leaf import measure_hue_leaf
 from .multi_gradient import measure_3color_gradients
 from .double_rt import measure_double_roundtrip
+from .cross_gamut import measure_cross_gamut_consistency
+from .quantization import measure_quantization_symmetry
+from .channel_mono import measure_channel_monotonicity
+from .banding import measure_perceptual_banding
+from .oog import measure_oog_excursion
+from .hue_reversal import measure_hue_reversal
+from .primary_disc import measure_primary_hue_discontinuity
+from .negative_lms import measure_negative_lms
+from .extreme_chroma import measure_extreme_chroma_stability
 
 __all__ = [
     "measure_roundtrip",
@@ -56,4 +65,13 @@ __all__ = [
     "measure_hue_leaf",
     "measure_3color_gradients",
     "measure_double_roundtrip",
+    "measure_cross_gamut_consistency",
+    "measure_quantization_symmetry",
+    "measure_channel_monotonicity",
+    "measure_perceptual_banding",
+    "measure_oog_excursion",
+    "measure_hue_reversal",
+    "measure_primary_hue_discontinuity",
+    "measure_negative_lms",
+    "measure_extreme_chroma_stability",
 ]
