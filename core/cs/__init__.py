@@ -10,6 +10,9 @@ Usage:
 from .base import ColorSpace, signed_cbrt, signed_cube
 from .oklab import OKLab, OKLab32
 from .cielab import CIELab
+from .pwL import PiecewiseLinearL
+from .enrichment import LGatedHueEnrichment, ChromaPreservingHueRotation
+from .neutral import neutral_blend, NCLut
 from . import transfer
 
 __all__ = [
@@ -19,5 +22,10 @@ __all__ = [
     "OKLab",
     "OKLab32",
     "CIELab",
+    "PiecewiseLinearL",
+    "LGatedHueEnrichment",
+    "ChromaPreservingHueRotation",
+    "neutral_blend",
+    "NCLut",
     "transfer",
 ]
