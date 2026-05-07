@@ -38,60 +38,44 @@ import torch
 
 torch.set_default_dtype(torch.float64)
 
-from core.spaces import OKLab, OKLab32, CIELab, GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched, GenSpaceBlueFix, NonlinearM1, HelmCT
-from core.spaces_literature import IPT, JzAzBz, ICtCp, CAM16UCS, DIN99d
-# Canonical (colour-science wrapper) versions — bit-identical references.
-# Use via `--canonical` flag for endüstri-standard baseline scoring.
-from core.spaces_literature_canonical import (
+# ── Color spaces ─────────────────────────────────────────────────────────────
+# Refactored modular spaces (Phase 1-6):
+from core.cs import (
+    OKLab, OKLab32, CIELab, HelmCT,
+    IPT, JzAzBz, ICtCp, CAM16UCS, DIN99d,
     IPTCanonical, JzAzBzCanonical, CAM16UCSCanonical, DIN99dCanonical,
 )
+# GenSpace adapter family (legacy core/spaces.py until Phase 7 port):
+from core.spaces import (
+    GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched,
+    GenSpaceBlueFix, NonlinearM1,
+)
+
+# ── Pairs + metrics ──────────────────────────────────────────────────────────
 from core.pairs import generate_all_pairs
-from core.gpu_metrics import (
-    measure_roundtrip,
-    measure_achromatic,
-    measure_gradients,
-    measure_gamut,
-    measure_gamut_mapping,
-    measure_hue,
-    measure_special_gradients,
+# All 81 metrics now live under core.metrics (Phase 5):
+from core.metrics import (
+    measure_roundtrip, measure_achromatic, measure_gradients,
+    measure_gamut, measure_gamut_mapping, measure_hue, measure_special_gradients,
     measure_stability,
-)
-from core.gpu_metrics_advanced import (
-    measure_cvd,
-    measure_animation,
-    measure_extremes,
-    measure_jacobian,
-    measure_contrast,
-    measure_hue_leaf,
-    measure_3color_gradients,
-    measure_double_roundtrip,
-    measure_cross_gamut_consistency,
-    measure_quantization_symmetry,
-    measure_channel_monotonicity,
-    measure_perceptual_banding,
-    measure_oog_excursion,
-    measure_hue_reversal,
-    measure_primary_hue_discontinuity,
-    measure_negative_lms,
+    # advanced
+    measure_cvd, measure_animation, measure_extremes, measure_jacobian,
+    measure_contrast, measure_hue_leaf, measure_3color_gradients,
+    measure_double_roundtrip, measure_cross_gamut_consistency,
+    measure_quantization_symmetry, measure_channel_monotonicity,
+    measure_perceptual_banding, measure_oog_excursion, measure_hue_reversal,
+    measure_primary_hue_discontinuity, measure_negative_lms,
     measure_extreme_chroma_stability,
-)
-from core.gpu_metrics_perceptual import (
-    measure_munsell_value,
-    measure_munsell_hue,
-    measure_macadam_isotropy,
-    measure_palette_uniformity,
-    measure_tint_shade_hue,
-    measure_dataviz_distinguishability,
-    measure_multistop_gradient,
-    measure_wcag_midpoint_contrast,
-    measure_harmony_accuracy,
-    measure_photo_gamut_map,
-    measure_eased_animation,
-    measure_hue_agreement,
-    measure_shade_hue_consistency,
-    measure_chroma_preservation,
-)
-from core.gpu_metrics_user_full import (
+    # perceptual
+    measure_munsell_value, measure_munsell_hue, measure_macadam_isotropy,
+    measure_palette_uniformity, measure_tint_shade_hue,
+    measure_dataviz_distinguishability, measure_multistop_gradient,
+    measure_wcag_midpoint_contrast, measure_harmony_accuracy,
+    measure_photo_gamut_map, measure_eased_animation, measure_hue_agreement,
+    measure_shade_hue_consistency, measure_chroma_preservation,
+    # independent
+    measure_hung_berns, measure_ebner_fairchild, measure_pointer_gamut,
+    # user full (39)
     measure_user_image_synthetic_gradient, measure_user_color_grading_lut,
     measure_user_white_balance, measure_user_natural_scene_palette,
     measure_user_tailwind_palette, measure_user_material_palette,
@@ -107,79 +91,80 @@ from core.gpu_metrics_user_full import (
     measure_user_display_calibration_drift, measure_user_8bit_quantization,
     measure_user_hover_state_transition, measure_user_focus_ring_quality,
     measure_user_dark_mode_flip,
-    # Phase 10
     measure_user_print_cmyk_fidelity, measure_user_pantone_spot,
     measure_user_hdr_tone_mapping, measure_user_cvd_tritanomaly,
     measure_user_newsprint_simulation, measure_user_cross_cultural_skin,
     measure_user_glassmorphism, measure_user_status_indicator_distinct,
-    # Phase 11
     measure_user_real_photo_macbeth, measure_user_jnd_aware_summary,
 )
-from core.gpu_metrics_independent import (
-    measure_hung_berns,
-    measure_ebner_fairchild,
-    measure_pointer_gamut,
-)
+from core.precision import select as _select_precision
 from core.report import compile_report, save_json, print_summary
 
 
-def get_device():
-    if torch.cuda.is_available():
-        name = torch.cuda.get_device_name(0)
-        return torch.device("cuda"), f"CUDA ({name})"
-    # MPS doesn't support float64 — use CPU for correctness
-    return torch.device("cpu"), "CPU"
+def get_device(precision_args=None):
+    """Resolve (device, dtype, label).
+
+    precision_args: namespace from argparse with .fast, .device, .precision
+    Default: CPU float64 (bit-exact baseline). --fast picks best GPU + float32.
+    Explicit --device/--precision combinations override.
+    """
+    if precision_args is None:
+        return _select_precision("default")[:2] + ("CPU float64",)
+
+    if precision_args.fast:
+        return _select_precision("fast")
+    if precision_args.device or precision_args.precision:
+        return _select_precision(
+            "explicit",
+            device=precision_args.device or "cpu",
+            precision=precision_args.precision or 64,
+        )
+    return _select_precision("default")
 
 
-def build_space(space_arg, json_path, device, canonical=False):
+def build_space(space_arg, json_path, device, canonical=False, dtype=torch.float64):
     """Create a ColorSpace from CLI arguments.
 
     canonical=True: literature spaces use colour-science wrapper (bit-identical reference).
     canonical=False: literature spaces use ColorBench-tuned implementations.
     """
     s = space_arg.lower()
+    # New refactored spaces accept (device=, dtype=) keywords:
     if s == "oklab":
-        return OKLab(device)
+        return OKLab(device=device, dtype=dtype)
     elif s == "oklab32":
-        return OKLab32(device)
+        return OKLab32(device=device, dtype=dtype)
     elif s == "cielab":
-        return CIELab(device)
-    elif s == "genspace":
+        return CIELab(device=device, dtype=dtype)
+    elif s == "helmct" or s == "ct" or s == "genspace":
         if not json_path:
-            print("Error: genspace requires --json path", file=sys.stderr)
+            print(f"Error: {s} requires --json path", file=sys.stderr)
             sys.exit(1)
-        return HelmCT(json_path, device)
+        return HelmCT(json_path, device=device, dtype=dtype)
+    # Legacy GenSpace family (Phase 7 will port; until then device-only signature):
     elif s == "genenriched":
         if not json_path:
-            print("Error: genenriched requires --json path", file=sys.stderr)
-            sys.exit(1)
+            print("Error: genenriched requires --json path", file=sys.stderr); sys.exit(1)
         return GenSpaceEnriched(json_path, device)
     elif s == "nonlinearm1" or s == "nlm1":
         if not json_path:
-            print("Error: nonlinearm1 requires --json path", file=sys.stderr)
-            sys.exit(1)
+            print("Error: nonlinearm1 requires --json path", file=sys.stderr); sys.exit(1)
         return NonlinearM1(json_path, device)
     elif s == "bluefix":
         if not json_path:
-            print("Error: bluefix requires --json path", file=sys.stderr)
-            sys.exit(1)
+            print("Error: bluefix requires --json path", file=sys.stderr); sys.exit(1)
         return GenSpaceBlueFix(json_path, device)
     elif s == "nr" or s == "nakarushton":
         if not json_path:
-            print("Error: nr requires --json path", file=sys.stderr)
-            sys.exit(1)
+            print("Error: nr requires --json path", file=sys.stderr); sys.exit(1)
         return NakaRushtonEnriched(json_path, device)
-    elif s == "helmct" or s == "ct":
-        if not json_path:
-            print("Error: helmct requires --json path", file=sys.stderr)
-            sys.exit(1)
-        return HelmCT(json_path, device)
+    # Literature spaces (refactored, dtype/device-aware):
     elif s == "ipt":
         return IPTCanonical(device) if canonical else IPT(device)
     elif s == "jzazbz":
         return JzAzBzCanonical(device) if canonical else JzAzBz(device)
     elif s == "ictcp":
-        return ICtCp(device)  # already passes pin test, no canonical variant needed
+        return ICtCp(device)
     elif s == "cam16ucs" or s == "cam16-ucs":
         return CAM16UCSCanonical(device) if canonical else CAM16UCS(device)
     elif s == "din99d":
@@ -478,6 +463,15 @@ def main():
                         default="all",
                         help="Filter comparison summary to a single metric category. "
                              "Default 'all' shows all 4 categories. 'perceptual_visible' shows only end-user perceptible metrics.")
+    # Precision / device routing (Phase 8 refactor):
+    parser.add_argument("--fast", action="store_true",
+                        help="Fast mode: GPU + float32 (~1e-6 numeric drift, sub-JND). "
+                             "Auto-selects MPS (Apple) or CUDA (NVIDIA). USE FOR ITERATION ONLY — "
+                             "snapshot regression and publication require default CPU float64.")
+    parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default=None,
+                        help="Explicit device override. Default: cpu.")
+    parser.add_argument("--precision", type=int, choices=[32, 64], default=None,
+                        help="Explicit precision. Default: 64 (bit-exact). MPS supports only 32.")
     args = parser.parse_args()
 
     # ── MetricSpace evaluation (completely separate path) ──────────────────
@@ -490,14 +484,17 @@ def main():
         run_metric_evaluation(metric_json, datasets_dir, repo_root)
         return
 
-    device, device_name = get_device()
-    print(f"Device: {device_name}")
+    device, dtype, device_name = get_device(args)
+    if args.fast:
+        print(f"⚡ FAST MODE — {device_name}, ~1e-6 drift. Not for snapshot regression.\n")
+    else:
+        print(f"Device: {device_name}")
 
     os.makedirs(args.out, exist_ok=True)
 
     reports = []
     for space_name in args.space:
-        space = build_space(space_name, args.json, device, canonical=args.canonical)
+        space = build_space(space_name, args.json, device, canonical=args.canonical, dtype=dtype)
 
         # Delete old JSON before test
         safe_name = space.name.replace("/", "_").replace(" ", "_")
