@@ -39,8 +39,7 @@ _REPO = os.path.abspath(os.path.join(_HERE, ".."))
 sys.path.insert(0, os.path.join(_REPO, "research", "perflab", "mlp_helmct_chroma"))
 sys.path.insert(0, os.path.join(_REPO, "research", "perflab", "mlp_helmct_chroma_posthuewarp"))
 
-from core.spaces import OKLab, CIELab, HelmCT  # noqa: E402
-from core.spaces_literature import IPT, CAM16UCS  # noqa: E402
+from core.cs import OKLab, CIELab, HelmCT, IPT, CAM16UCS  # noqa: E402
 from core.gamut_map import gamut_map, gamut_map_clip  # noqa: E402
 from mlp_helmct_chroma_space import MLPHelmCTChroma  # noqa: E402
 from mlp_helmct_chroma_posthuewarp_space import MLPHelmCTChromaPostHueWarp  # noqa: E402

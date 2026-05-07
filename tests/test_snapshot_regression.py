@@ -113,8 +113,8 @@ def test_OKLab_live_vs_snapshot():
     sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..")))
     from colorbench.run import build_space, run_test, get_device
 
-    device, device_name = get_device()
-    space = build_space("oklab", None, device)
+    device, dtype, device_name = get_device()
+    space = build_space("oklab", None, device, dtype=dtype)
     live = run_test(space, device, device_name)
     snap = load_snapshot("OKLab_2026-05-06.json")
 

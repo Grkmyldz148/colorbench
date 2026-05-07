@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 import colour
 try:
     import torch
-    from colorbench.core.spaces import OKLab, OKLab32, CIELab
+    from colorbench.core.cs import OKLab, OKLab32, CIELab
     HAVE_TORCH = True
 except ImportError:
     HAVE_TORCH = False

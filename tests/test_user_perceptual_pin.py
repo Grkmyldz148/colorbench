@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 try:
     import torch
-    from colorbench.core.spaces import OKLab
-    from colorbench.core import gpu_metrics_user_full as m
+    from colorbench.core.cs import OKLab
+    from colorbench.core.metrics import user_full as m
     HAVE_TORCH = True
 except ImportError:
     HAVE_TORCH = False

@@ -147,7 +147,7 @@ colorbench/
 ## Adding a Custom Space
 
 ```python
-from core.spaces import CustomSpace
+from core.cs import CustomSpace
 
 def my_forward(xyz):  # (N, 3) tensor → (N, 3) tensor
     ...

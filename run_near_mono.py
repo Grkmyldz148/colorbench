@@ -28,7 +28,7 @@ torch.set_default_dtype(torch.float64)
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 
-from core.spaces import OKLab, CIELab, HelmCT  # noqa: E402
+from core.cs import OKLab, CIELab, HelmCT  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Palettes (hex). Source citations in inline comments.

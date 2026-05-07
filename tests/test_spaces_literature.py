@@ -24,8 +24,8 @@ if _ROOT not in sys.path:
 
 torch.set_default_dtype(torch.float64)
 
-from colorbench.core.spaces import M_SRGB, D65  # noqa: E402
-from colorbench.core.spaces_literature import (  # noqa: E402
+from colorbench.core.cs import M_SRGB, D65  # noqa: E402
+from colorbench.core.cs import (  # noqa: E402
     IPT,
     JzAzBz,
     ICtCp,
@@ -88,8 +88,8 @@ def run_achromatic(space, device, n=50):
     return max_a, max_b
 
 
-def test_space(name, space_cls, device, rt_tol=1e-8, ach_tol=1e-6):
-    space = space_cls(device)
+def _check_space(name, space_cls, device, rt_tol=1e-8, ach_tol=1e-6):
+    space = space_cls(device)  # all literature spaces accept positional device
     rt_err, rt_finite = run_roundtrip(space, device, rt_tol)
     ok_fwd, ok_inv = run_finite(space, device)
     ach_a, ach_b = run_achromatic(space, device)

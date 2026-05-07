@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 import colour
 try:
     import torch
-    from colorbench.core.spaces_literature_canonical import (
+    from colorbench.core.cs import (
         IPTCanonical, JzAzBzCanonical, CAM16UCSCanonical, DIN99dCanonical,
     )
     HAVE_TORCH = True
