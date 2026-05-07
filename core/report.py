@@ -32,7 +32,30 @@ def compile_report(space_name, device_name, results):
                 "oog_excursion", "hue_reversal", "primary_hue_disc",
                 "negative_lms", "extreme_chroma_stab",
                 # Independent third-party (Faz 4)
-                "hung_berns", "ebner_fairchild", "pointer_gamut"]:
+                "hung_berns", "ebner_fairchild", "pointer_gamut",
+                # End-user perceptual (Phase 9 — 29 tests)
+                "user_image_synthetic_gradient", "user_color_grading_lut",
+                "user_white_balance", "user_natural_scene_palette",
+                "user_tailwind_palette", "user_material_palette",
+                "user_diverging_colormap", "user_sequential_colormap",
+                "user_categorical_palette", "user_theme_dark_mode",
+                "user_skin_tone_fitzpatrick", "user_natural_colors",
+                "user_brand_colors", "user_logo_color_preservation",
+                "user_cinematic_lut", "user_picker_hue_continuity",
+                "user_picker_chroma_envelope", "user_achromatic_visual",
+                "user_hue_wheel_uniformity", "user_cvd_palette_spacing",
+                "user_low_vision_contrast", "user_color_blind_safe_palettes",
+                "user_p3_wide_gamut", "user_rec2020_hdr_gamut",
+                "user_display_calibration_drift", "user_8bit_quantization",
+                "user_hover_state_transition", "user_focus_ring_quality",
+                "user_dark_mode_flip",
+                # Phase 10
+                "user_print_cmyk_fidelity", "user_pantone_spot",
+                "user_hdr_tone_mapping", "user_cvd_tritanomaly",
+                "user_newsprint_simulation", "user_cross_cultural_skin",
+                "user_glassmorphism", "user_status_indicator_distinct",
+                # Phase 11
+                "user_real_photo_macbeth", "user_jnd_aware_summary"]:
         if key in results:
             report[key] = results[key]
 

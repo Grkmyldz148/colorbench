@@ -6,7 +6,7 @@ existing gpu_metrics modules.
 Usage:
     from core.metric_eval import run_metric_evaluation
     results = run_metric_evaluation(
-        metric_json="research/checkpoints/metricspace_v21.json",
+        metric_json="helmlab-main-repo/checkpoints/metricspace_v21.json",
         datasets_dir="datasets"
     )
 
@@ -48,74 +48,32 @@ def _cat_to_d65(xyz: np.ndarray, white: np.ndarray) -> np.ndarray:
 # ── Baseline metrics (standalone numpy) ───────────────────────────────────────
 
 def _xyz_to_cielab(xyz: np.ndarray, white: np.ndarray) -> np.ndarray:
-    r = xyz / white
-    delta3 = (6.0 / 29.0) ** 3
-    f = np.where(r > delta3, r ** (1.0 / 3.0), r / (3 * (6.0 / 29.0) ** 2) + 4.0 / 29.0)
-    L = 116.0 * f[..., 1] - 16.0
-    a = 500.0 * (f[..., 0] - f[..., 1])
-    b = 200.0 * (f[..., 1] - f[..., 2])
-    return np.stack([L, a, b], axis=-1)
+    """XYZ → CIE Lab via colour-science (peer-reviewed reference).
+
+    `white` is XYZ tristimulus of the reference illuminant. colour-science
+    accepts xy chromaticity, so we project XYZ → xy here.
+    """
+    import colour
+    # XYZ → xy chromaticity for the illuminant
+    s = white.sum()
+    illum_xy = np.array([white[0] / s, white[1] / s])
+    return colour.XYZ_to_Lab(xyz, illuminant=illum_xy)
 
 
 def _cielab_de(xyz1: np.ndarray, xyz2: np.ndarray, white: np.ndarray) -> np.ndarray:
+    """CIE76 ΔE via colour-science."""
+    import colour
     lab1 = _xyz_to_cielab(xyz1, white)
     lab2 = _xyz_to_cielab(xyz2, white)
-    return np.sqrt(np.sum((lab1 - lab2) ** 2, axis=-1))
+    return colour.delta_E(lab1, lab2, method="CIE 1976")
 
 
 def _ciede2000(xyz1: np.ndarray, xyz2: np.ndarray, white: np.ndarray) -> np.ndarray:
+    """CIEDE2000 via colour-science (CIE 224:2017 reference)."""
+    import colour
     lab1 = _xyz_to_cielab(xyz1, white)
     lab2 = _xyz_to_cielab(xyz2, white)
-    L1, a1, b1 = lab1[..., 0], lab1[..., 1], lab1[..., 2]
-    L2, a2, b2 = lab2[..., 0], lab2[..., 1], lab2[..., 2]
-
-    C1 = np.sqrt(a1 ** 2 + b1 ** 2)
-    C2 = np.sqrt(a2 ** 2 + b2 ** 2)
-    C_avg = (C1 + C2) / 2
-    C_avg7 = C_avg ** 7
-    G = 0.5 * (1 - np.sqrt(C_avg7 / (C_avg7 + 25 ** 7)))
-    a1p = a1 * (1 + G)
-    a2p = a2 * (1 + G)
-    C1p = np.sqrt(a1p ** 2 + b1 ** 2)
-    C2p = np.sqrt(a2p ** 2 + b2 ** 2)
-
-    h1p = np.degrees(np.arctan2(b1, a1p)) % 360
-    h2p = np.degrees(np.arctan2(b2, a2p)) % 360
-
-    dLp = L2 - L1
-    dCp = C2p - C1p
-    dhp = np.where(
-        np.abs(h2p - h1p) <= 180, h2p - h1p,
-        np.where(h2p - h1p > 180, h2p - h1p - 360, h2p - h1p + 360)
-    )
-    dHp = 2 * np.sqrt(C1p * C2p) * np.sin(np.radians(dhp) / 2)
-
-    Lp_avg = (L1 + L2) / 2
-    Cp_avg = (C1p + C2p) / 2
-    hp_avg = np.where(
-        np.abs(h1p - h2p) <= 180, (h1p + h2p) / 2,
-        np.where(h1p + h2p < 360, (h1p + h2p + 360) / 2, (h1p + h2p - 360) / 2)
-    )
-
-    T = (1
-         - 0.17 * np.cos(np.radians(hp_avg - 30))
-         + 0.24 * np.cos(np.radians(2 * hp_avg))
-         + 0.32 * np.cos(np.radians(3 * hp_avg + 6))
-         - 0.20 * np.cos(np.radians(4 * hp_avg - 63)))
-
-    SL = 1 + 0.015 * (Lp_avg - 50) ** 2 / np.sqrt(20 + (Lp_avg - 50) ** 2)
-    SC = 1 + 0.045 * Cp_avg
-    SH = 1 + 0.015 * Cp_avg * T
-
-    Cp_avg7 = Cp_avg ** 7
-    RC = 2 * np.sqrt(Cp_avg7 / (Cp_avg7 + 25 ** 7))
-    d_theta = 30 * np.exp(-((hp_avg - 275) / 25) ** 2)
-    RT = -np.sin(np.radians(2 * d_theta)) * RC
-
-    return np.sqrt(
-        (dLp / SL) ** 2 + (dCp / SC) ** 2 + (dHp / SH) ** 2
-        + RT * (dCp / SC) * (dHp / SH)
-    )
+    return colour.delta_E(lab1, lab2, method="CIE 2000")
 
 
 def _oklab_de(xyz1: np.ndarray, xyz2: np.ndarray) -> np.ndarray:
@@ -167,20 +125,11 @@ def _cam16_ucs_de(xyz1: np.ndarray, xyz2: np.ndarray) -> np.ndarray:
 
 
 def _cie94_de(xyz1: np.ndarray, xyz2: np.ndarray, white: np.ndarray) -> np.ndarray:
-    """CIE94 ΔE (CIE TC 1-29, 1994). Graphic arts parametric factors."""
+    """CIE94 ΔE via colour-science (graphic arts variant default)."""
+    import colour
     lab1 = _xyz_to_cielab(xyz1, white)
     lab2 = _xyz_to_cielab(xyz2, white)
-    L1, a1, b1 = lab1[..., 0], lab1[..., 1], lab1[..., 2]
-    L2, a2, b2 = lab2[..., 0], lab2[..., 1], lab2[..., 2]
-    C1 = np.sqrt(a1 ** 2 + b1 ** 2)
-    C2 = np.sqrt(a2 ** 2 + b2 ** 2)
-    dL = L1 - L2
-    dC = C1 - C2
-    dH2 = (a1 - a2) ** 2 + (b1 - b2) ** 2 - dC ** 2
-    SL = 1.0
-    SC = 1 + 0.045 * C1
-    SH = 1 + 0.015 * C1
-    return np.sqrt((dL / SL) ** 2 + (dC / SC) ** 2 + np.maximum(dH2, 0) / SH ** 2)
+    return colour.delta_E(lab1, lab2, method="CIE 1994")
 
 
 def _ciecam02_ucs_de(xyz1: np.ndarray, xyz2: np.ndarray) -> np.ndarray:

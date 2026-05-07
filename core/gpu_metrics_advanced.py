@@ -57,17 +57,10 @@ def _xyz_to_cielab(xyz, d65):
     return torch.stack([L, a, b], dim=-1)
 
 
-def _ciede2000_simplified(cl1, cl2):
-    dL = cl2[..., 0] - cl1[..., 0]
-    C1 = (cl1[..., 1] ** 2 + cl1[..., 2] ** 2).sqrt()
-    C2 = (cl2[..., 1] ** 2 + cl2[..., 2] ** 2).sqrt()
-    dC = C2 - C1
-    dH = ((cl2[..., 1] - cl1[..., 1]) ** 2 +
-          (cl2[..., 2] - cl1[..., 2]) ** 2 - dC ** 2).clamp(min=0).sqrt()
-    SL = 1 + 0.015 * (cl1[..., 0] - 50) ** 2 / (20 + (cl1[..., 0] - 50) ** 2).sqrt()
-    SC = 1 + 0.045 * C1
-    SH = 1 + 0.015 * C1
-    return ((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2).sqrt()
+from .gpu_de import ciede2000 as _ciede2000_simplified
+# Replaced (2026-05-06): full CIEDE2000 via gpu_de.
+# See memory/project_simplified_de2000_bug.md for context. Pre-fix this was
+# a CIE-94-like simplified formula. Name kept for in-file call sites.
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -40,6 +40,11 @@ torch.set_default_dtype(torch.float64)
 
 from core.spaces import OKLab, OKLab32, CIELab, GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched, GenSpaceBlueFix, NonlinearM1, HelmCT
 from core.spaces_literature import IPT, JzAzBz, ICtCp, CAM16UCS, DIN99d
+# Canonical (colour-science wrapper) versions — bit-identical references.
+# Use via `--canonical` flag for endüstri-standard baseline scoring.
+from core.spaces_literature_canonical import (
+    IPTCanonical, JzAzBzCanonical, CAM16UCSCanonical, DIN99dCanonical,
+)
 from core.pairs import generate_all_pairs
 from core.gpu_metrics import (
     measure_roundtrip,
@@ -86,6 +91,30 @@ from core.gpu_metrics_perceptual import (
     measure_shade_hue_consistency,
     measure_chroma_preservation,
 )
+from core.gpu_metrics_user_full import (
+    measure_user_image_synthetic_gradient, measure_user_color_grading_lut,
+    measure_user_white_balance, measure_user_natural_scene_palette,
+    measure_user_tailwind_palette, measure_user_material_palette,
+    measure_user_diverging_colormap, measure_user_sequential_colormap,
+    measure_user_categorical_palette, measure_user_theme_dark_mode,
+    measure_user_skin_tone_fitzpatrick, measure_user_natural_colors,
+    measure_user_brand_colors, measure_user_logo_color_preservation,
+    measure_user_cinematic_lut, measure_user_picker_hue_continuity,
+    measure_user_picker_chroma_envelope, measure_user_achromatic_visual,
+    measure_user_hue_wheel_uniformity, measure_user_cvd_palette_spacing,
+    measure_user_low_vision_contrast, measure_user_color_blind_safe_palettes,
+    measure_user_p3_wide_gamut, measure_user_rec2020_hdr_gamut,
+    measure_user_display_calibration_drift, measure_user_8bit_quantization,
+    measure_user_hover_state_transition, measure_user_focus_ring_quality,
+    measure_user_dark_mode_flip,
+    # Phase 10
+    measure_user_print_cmyk_fidelity, measure_user_pantone_spot,
+    measure_user_hdr_tone_mapping, measure_user_cvd_tritanomaly,
+    measure_user_newsprint_simulation, measure_user_cross_cultural_skin,
+    measure_user_glassmorphism, measure_user_status_indicator_distinct,
+    # Phase 11
+    measure_user_real_photo_macbeth, measure_user_jnd_aware_summary,
+)
 from core.gpu_metrics_independent import (
     measure_hung_berns,
     measure_ebner_fairchild,
@@ -102,8 +131,12 @@ def get_device():
     return torch.device("cpu"), "CPU"
 
 
-def build_space(space_arg, json_path, device):
-    """Create a ColorSpace from CLI arguments."""
+def build_space(space_arg, json_path, device, canonical=False):
+    """Create a ColorSpace from CLI arguments.
+
+    canonical=True: literature spaces use colour-science wrapper (bit-identical reference).
+    canonical=False: literature spaces use ColorBench-tuned implementations.
+    """
     s = space_arg.lower()
     if s == "oklab":
         return OKLab(device)
@@ -142,15 +175,15 @@ def build_space(space_arg, json_path, device):
             sys.exit(1)
         return HelmCT(json_path, device)
     elif s == "ipt":
-        return IPT(device)
+        return IPTCanonical(device) if canonical else IPT(device)
     elif s == "jzazbz":
-        return JzAzBz(device)
+        return JzAzBzCanonical(device) if canonical else JzAzBz(device)
     elif s == "ictcp":
-        return ICtCp(device)
+        return ICtCp(device)  # already passes pin test, no canonical variant needed
     elif s == "cam16ucs" or s == "cam16-ucs":
-        return CAM16UCS(device)
+        return CAM16UCSCanonical(device) if canonical else CAM16UCS(device)
     elif s == "din99d":
-        return DIN99d(device)
+        return DIN99dCanonical(device) if canonical else DIN99d(device)
     else:
         print(f"Unknown space: {space_arg}", file=sys.stderr)
         sys.exit(1)
@@ -379,6 +412,56 @@ def run_test(space, device, device_name):
     results["pointer_gamut"] = measure_pointer_gamut(space, device)
     print(f"          {time.time()-t0:.1f}s")
 
+    # ── 29 end-user perceptual tests (Phase 9) ────────────────────────────
+    user_tests = [
+        ("user_image_synthetic_gradient",   measure_user_image_synthetic_gradient),
+        ("user_color_grading_lut",          measure_user_color_grading_lut),
+        ("user_white_balance",              measure_user_white_balance),
+        ("user_natural_scene_palette",      measure_user_natural_scene_palette),
+        ("user_tailwind_palette",           measure_user_tailwind_palette),
+        ("user_material_palette",           measure_user_material_palette),
+        ("user_diverging_colormap",         measure_user_diverging_colormap),
+        ("user_sequential_colormap",        measure_user_sequential_colormap),
+        ("user_categorical_palette",        measure_user_categorical_palette),
+        ("user_theme_dark_mode",            measure_user_theme_dark_mode),
+        ("user_skin_tone_fitzpatrick",      measure_user_skin_tone_fitzpatrick),
+        ("user_natural_colors",             measure_user_natural_colors),
+        ("user_brand_colors",               measure_user_brand_colors),
+        ("user_logo_color_preservation",    measure_user_logo_color_preservation),
+        ("user_cinematic_lut",              measure_user_cinematic_lut),
+        ("user_picker_hue_continuity",      measure_user_picker_hue_continuity),
+        ("user_picker_chroma_envelope",     measure_user_picker_chroma_envelope),
+        ("user_achromatic_visual",          measure_user_achromatic_visual),
+        ("user_hue_wheel_uniformity",       measure_user_hue_wheel_uniformity),
+        ("user_cvd_palette_spacing",        measure_user_cvd_palette_spacing),
+        ("user_low_vision_contrast",        measure_user_low_vision_contrast),
+        ("user_color_blind_safe_palettes",  measure_user_color_blind_safe_palettes),
+        ("user_p3_wide_gamut",              measure_user_p3_wide_gamut),
+        ("user_rec2020_hdr_gamut",          measure_user_rec2020_hdr_gamut),
+        ("user_display_calibration_drift",  measure_user_display_calibration_drift),
+        ("user_8bit_quantization",          measure_user_8bit_quantization),
+        ("user_hover_state_transition",     measure_user_hover_state_transition),
+        ("user_focus_ring_quality",         measure_user_focus_ring_quality),
+        ("user_dark_mode_flip",             measure_user_dark_mode_flip),
+        # Phase 10
+        ("user_print_cmyk_fidelity",        measure_user_print_cmyk_fidelity),
+        ("user_pantone_spot",               measure_user_pantone_spot),
+        ("user_hdr_tone_mapping",           measure_user_hdr_tone_mapping),
+        ("user_cvd_tritanomaly",            measure_user_cvd_tritanomaly),
+        ("user_newsprint_simulation",       measure_user_newsprint_simulation),
+        ("user_cross_cultural_skin",        measure_user_cross_cultural_skin),
+        ("user_glassmorphism",              measure_user_glassmorphism),
+        ("user_status_indicator_distinct",  measure_user_status_indicator_distinct),
+        # Phase 11 — real-data + JND-aware
+        ("user_real_photo_macbeth",         measure_user_real_photo_macbeth),
+        ("user_jnd_aware_summary",          measure_user_jnd_aware_summary),
+    ]
+    for i, (key, fn) in enumerate(user_tests, 1):
+        t0 = time.time()
+        print(f"  [E{i:02d}/{len(user_tests)}] {key}...", flush=True)
+        results[key] = fn(space, device)
+        print(f"          {time.time()-t0:.1f}s")
+
     report = compile_report(space.name, device_name, results)
     return report
 
@@ -389,6 +472,12 @@ def main():
                         help="Space(s) to test: oklab, cielab, genspace, metric")
     parser.add_argument("--json", help="JSON params file (for genspace / metricspace)")
     parser.add_argument("--out", default="results", help="Output directory")
+    parser.add_argument("--canonical", action="store_true",
+                        help="Use colour-science wrapper for IPT/JzAzBz/CAM16-UCS/DIN99d (bit-identical reference). Default: ColorBench-tuned implementations.")
+    parser.add_argument("--category", choices=["all", "mathematical", "structural", "perceptual_internal", "perceptual_visible"],
+                        default="all",
+                        help="Filter comparison summary to a single metric category. "
+                             "Default 'all' shows all 4 categories. 'perceptual_visible' shows only end-user perceptible metrics.")
     args = parser.parse_args()
 
     # ── MetricSpace evaluation (completely separate path) ──────────────────
@@ -408,7 +497,7 @@ def main():
 
     reports = []
     for space_name in args.space:
-        space = build_space(space_name, args.json, device)
+        space = build_space(space_name, args.json, device, canonical=args.canonical)
 
         # Delete old JSON before test
         safe_name = space.name.replace("/", "_").replace(" ", "_")

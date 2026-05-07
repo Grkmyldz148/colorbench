@@ -50,17 +50,12 @@ def _xyz_to_cielab(xyz, d65):
     return torch.stack([L, a, b], dim=-1)
 
 
-def _ciede2000_simplified(cl1, cl2):
-    dL = cl2[..., 0] - cl1[..., 0]
-    C1 = (cl1[..., 1] ** 2 + cl1[..., 2] ** 2).sqrt()
-    C2 = (cl2[..., 1] ** 2 + cl2[..., 2] ** 2).sqrt()
-    dC = C2 - C1
-    dH = ((cl2[..., 1] - cl1[..., 1]) ** 2 +
-          (cl2[..., 2] - cl1[..., 2]) ** 2 - dC ** 2).clamp(min=0).sqrt()
-    SL = 1 + 0.015 * (cl1[..., 0] - 50) ** 2 / (20 + (cl1[..., 0] - 50) ** 2).sqrt()
-    SC = 1 + 0.045 * C1
-    SH = 1 + 0.015 * C1
-    return ((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2).sqrt()
+from .gpu_de import ciede2000 as _ciede2000_simplified
+# NOTE: name kept as `_ciede2000_simplified` for backwards-compat with the
+# 12 call sites across gpu_metrics_*.py. The implementation is now the FULL
+# CIEDE2000 (CIE 224:2017 spec, bit-identik to colour-science).
+# Pre-2026-05-06 this was a CIE-94-like simplified formula (Spearman ρ=0.91
+# with real CIEDE2000) — see memory/project_simplified_de2000_bug.md.
 
 
 def _hsv_to_rgb(h, s, v):
@@ -91,8 +86,13 @@ def _hex_to_xyz(hexstr, ms):
 def measure_munsell_value(space, device):
     """CV of L spacing for Munsell V=1..9 neutral grays.
 
-    Expected: OKLab ~25%, CIE Lab ~3% (CIE Lab was designed for this).
-    Lower is better.
+    Lower is better. Reference snapshot values (2026-05-06):
+      - OKLab: 2.80% (facelessuser-refined matrices)
+      - CIE Lab: ~3% (designed for this)
+      - Helmgen v0.11.1: 0.16% (depcubic + L-gated)
+    Note: pre-2026 docstring claimed "OKLab ~25%" — this was inaccurate
+    (likely from a CV calculated over the full 0..1 range instead of
+    consecutive deltas). Current implementation uses CV of consecutive ΔL.
     """
     d65 = _to(_D65, device)
     grays = torch.stack([d65 * MUNSELL_VALUE_Y[v] for v in range(1, 10)])  # (9, 3)
@@ -215,9 +215,12 @@ def measure_macadam_isotropy(space, device):
 # ═══════════════════════════════════════════════════════════════
 
 def measure_palette_uniformity(space, device):
-    """CV of CIE Lab L* spacing across 10-shade palettes.
+    """CV of L* spacing in the TEST SPACE across 10-shade palettes.
 
-    7 test hues, each with 10 shades (white→base→black).
+    7 test hues, each with 10 shades (white→base→black) interpolated
+    in the test space. Reports CV of consecutive L* deltas — i.e. how
+    uniform the lightness ladder is *in the test space's own L axis*.
+    Note: NOT measured in CIE Lab — the test space's forward() is used.
     Lower is better.
     """
     ms = _to(_M_SRGB, device)

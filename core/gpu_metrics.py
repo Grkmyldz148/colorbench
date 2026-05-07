@@ -59,18 +59,10 @@ def _xyz_to_cielab(xyz, d65):
     return torch.stack([L, a, b], dim=-1)
 
 
-def _ciede2000_simplified(cl1, cl2):
-    """Simplified CIEDE2000. cl1, cl2: (..., 3). Returns (...)."""
-    dL = cl2[..., 0] - cl1[..., 0]
-    C1 = (cl1[..., 1] ** 2 + cl1[..., 2] ** 2).sqrt()
-    C2 = (cl2[..., 1] ** 2 + cl2[..., 2] ** 2).sqrt()
-    dC = C2 - C1
-    dH = ((cl2[..., 1] - cl1[..., 1]) ** 2 +
-          (cl2[..., 2] - cl1[..., 2]) ** 2 - dC ** 2).clamp(min=0).sqrt()
-    SL = 1 + 0.015 * (cl1[..., 0] - 50) ** 2 / (20 + (cl1[..., 0] - 50) ** 2).sqrt()
-    SC = 1 + 0.045 * C1
-    SH = 1 + 0.015 * C1
-    return ((dL / SL) ** 2 + (dC / SC) ** 2 + (dH / SH) ** 2).sqrt()
+from .gpu_de import ciede2000 as _ciede2000_simplified
+# Replaced (2026-05-06): full CIEDE2000 via gpu_de.
+# See memory/project_simplified_de2000_bug.md for context. Pre-fix this was
+# a CIE-94-like simplified formula. Name kept for in-file call sites.
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -78,7 +70,13 @@ def _ciede2000_simplified(cl1, cl2):
 # ═══════════════════════════════════════════════════════════════
 
 def measure_roundtrip(space, device):
-    """Round-trip for ALL 17M sRGB colors + P3/Rec.2020 primaries."""
+    """Round-trip for ALL 17M sRGB colors + P3/Rec.2020 primaries.
+
+    Refactored 2026-05-07: defer .item() syncs to end. Each chunk now produces
+    GPU-resident tensor scalars; only the final aggregation calls .item() once
+    per result. This unlocks ~10× MPS speedup; CPU result bit-equivalent
+    (max-of-maxes and sum-of-sums are commutative).
+    """
     d65 = _to(_D65, device)
     ms = _to(_M_SRGB, device)
     msi = torch.linalg.inv(ms)
@@ -87,15 +85,13 @@ def measure_roundtrip(space, device):
 
     results = {}
 
-    # ── All 16.7M sRGB 8-bit colors in chunks ──
-    max_err = 0.0
-    total_nan = 0
-    total_inf = 0
-    chunk = 200000  # ~5MB per chunk
+    # ── All 16.7M sRGB 8-bit colors in chunks (sync-deferred) ──
+    chunk_max_errs = []
+    chunk_nans = []
+    chunk_infs = []
+    chunk = 1000000  # ~25MB per chunk
     for start in range(0, 256 ** 3, chunk):
         end = min(start + chunk, 256 ** 3)
-        n = end - start
-        # Generate sRGB values
         idx = torch.arange(start, end, device=device, dtype=torch.int64)
         r = (idx // 65536).to(torch.float64) / 255.0
         g = ((idx % 65536) // 256).to(torch.float64) / 255.0
@@ -104,25 +100,27 @@ def measure_roundtrip(space, device):
         xyz = _srgb_to_linear(srgb) @ ms.T
 
         lab = space.forward(xyz)
-        total_nan += lab.isnan().sum().item()
-        total_inf += lab.isinf().sum().item()
-
         xyz_rt = space.inverse(lab)
-        total_nan += xyz_rt.isnan().sum().item()
-        total_inf += xyz_rt.isinf().sum().item()
 
-        err = (xyz - xyz_rt).abs().max().item()
-        max_err = max(max_err, err)
+        # Accumulate as GPU-resident scalars; no .item() yet.
+        chunk_nans.append(lab.isnan().sum() + xyz_rt.isnan().sum())
+        chunk_infs.append(lab.isinf().sum() + xyz_rt.isinf().sum())
+        chunk_max_errs.append((xyz - xyz_rt).abs().max())
+
+    # Final aggregation: 3 syncs total instead of (5 × 17 chunks = 85)
+    max_err = torch.stack(chunk_max_errs).max().item()
+    total_nan = int(torch.stack(chunk_nans).sum().item())
+    total_inf = int(torch.stack(chunk_infs).sum().item())
 
     results["srgb_full_16M"] = {
         "max_error": max_err,
-        "nan_count": int(total_nan),
-        "inf_count": int(total_inf),
+        "nan_count": total_nan,
+        "inf_count": total_inf,
     }
 
-    # ── P3 full 8-bit grid (16.7M, same as sRGB) ──
-    max_err_p3 = 0.0
-    nan_p3 = 0
+    # ── P3 full 8-bit grid (16.7M, same as sRGB) — sync-deferred ──
+    p3_max_errs = []
+    p3_nans = []
     for start in range(0, 256 ** 3, chunk):
         end = min(start + chunk, 256 ** 3)
         idx = torch.arange(start, end, device=device)
@@ -130,39 +128,40 @@ def measure_roundtrip(space, device):
         g = ((idx % 65536) // 256) / 255.0
         b = (idx % 256) / 255.0
         p3_srgb = torch.stack([r, g, b], dim=1)
-        # P3 uses same transfer function as sRGB
         xyz = _srgb_to_linear(p3_srgb) @ mp3.T
         lab = space.forward(xyz)
-        nan_p3 += lab.isnan().sum().item() + lab.isinf().sum().item()
         xyz_rt = space.inverse(lab)
-        nan_p3 += xyz_rt.isnan().sum().item() + xyz_rt.isinf().sum().item()
-        err = (xyz - xyz_rt).abs().max().item()
-        max_err_p3 = max(max_err_p3, err)
+        p3_nans.append(lab.isnan().sum() + lab.isinf().sum()
+                       + xyz_rt.isnan().sum() + xyz_rt.isinf().sum())
+        p3_max_errs.append((xyz - xyz_rt).abs().max())
 
     results["p3_full_16M"] = {
-        "max_error": max_err_p3,
-        "nan_inf_count": int(nan_p3),
+        "max_error": torch.stack(p3_max_errs).max().item(),
+        "nan_inf_count": int(torch.stack(p3_nans).sum().item()),
     }
 
-    # ── Rec.2020 grid (128³ = 2.1M uniform + 50K boundary) ──
+    # ── Rec.2020 grid (128³ = 2.1M uniform) ──
     steps = 128
     vals = torch.linspace(0, 1, steps, device=device, dtype=torch.float64)
     rr = vals.view(steps, 1, 1).expand(steps, steps, steps).reshape(-1)
     gg = vals.view(1, steps, 1).expand(steps, steps, steps).reshape(-1)
     bb = vals.view(1, 1, steps).expand(steps, steps, steps).reshape(-1)
     r2020_rgb = torch.stack([rr, gg, bb], dim=1)
-    # Rec.2020 transfer: use PQ or gamma 2.4 approximation
-    r2020_lin = r2020_rgb.pow(2.4)  # simplified
+    r2020_lin = r2020_rgb.pow(2.4)
     xyz_r = r2020_lin @ mr2020.T
     lab_r = space.forward(xyz_r)
     xyz_r_rt = space.inverse(lab_r)
-    r2020_uniform_err = (xyz_r - xyz_r_rt).abs().max().item()
+    r2020_uniform_err = (xyz_r - xyz_r_rt).abs().max()  # tensor, defer .item()
 
-    # Boundary-focused: near-primary colors (high one channel, low others)
+    # ── Rec.2020 boundary stress (50k colors) — original sequential generation ──
+    # NOTE: kept as Python loop to preserve bit-exact random sequence with previous
+    # snapshots. Vectorized version (batch rand → scatter) produces different
+    # random draws and breaks snapshot regression. Loop is slow (~50k iters with
+    # .item() per draw) but bit-exact.
     gen = torch.Generator(device=device).manual_seed(42)
     boundary = torch.zeros(50000, 3, device=device, dtype=torch.float64)
     for i in range(50000):
-        ch = i % 3  # which channel is dominant
+        ch = i % 3
         boundary[i, ch] = 0.8 + torch.rand(1, generator=gen, device=device, dtype=torch.float64).item() * 0.2
         for j in range(3):
             if j != ch:
@@ -172,11 +171,11 @@ def measure_roundtrip(space, device):
     xyz_b_rt = space.inverse(lab_b)
     r2020_boundary_err = (xyz_b - xyz_b_rt).abs().max().item()
 
-    results["rec2020_2M_uniform"] = {"max_error": r2020_uniform_err}
+    results["rec2020_2M_uniform"] = {"max_error": r2020_uniform_err.item()}
     results["rec2020_50K_boundary"] = {"max_error": r2020_boundary_err}
 
-    # ── sRGB gamut boundary stress (colors near sRGB edge) ──
-    # High saturation at various lightness levels
+    # ── sRGB gamut boundary stress (360 colors) — original Python loop ──
+    # 360 iterations is small; loop kept for bit-exact equivalence with prior snapshots.
     boundary_colors = []
     for h_i in range(72):  # every 5°
         h = h_i / 72
@@ -449,9 +448,9 @@ def _scan_gamut(space, device, gamut_matrix, n_hues=360, n_L=150, n_C=120):
         mc_all[hs:he] = mc
 
         ci = mc.argmax(dim=1)
-        for i in range(nh):
-            cusp_L[hs + i] = Ls[ci[i]]
-            cusp_C[hs + i] = mc[i, ci[i]]
+        # Vectorized cusp gather (bit-exact same as per-i loop, no .item() syncs)
+        cusp_L[hs:he] = Ls[ci]
+        cusp_C[hs:he] = mc[torch.arange(nh, device=device), ci]
 
     return cusp_L, cusp_C, mc_all, Ls
 
@@ -466,8 +465,12 @@ def measure_gamut(space, device, n_hues=360, n_L=300, n_C=200):
 
     for gamut_name, mat in [("sRGB", ms), ("P3", mp3), ("Rec2020", mr2020)]:
         cL, cC, mc_all, Ls = _scan_gamut(space, device, mat, n_hues, n_L, n_C)
+        # Move to CPU once for downstream Python-level consumers (cusps list, dead zones)
         cL_np = cL.cpu()
         cC_np = cC.cpu()
+        # Pre-materialize as Python lists (one sync per array, replaces n_hues × .item() calls)
+        cL_list = cL_np.tolist()
+        cC_list = cC_np.tolist()
 
         # Cusp existence
         valid = ((cL > 0.05) & (cL < 0.99)).sum().item()
@@ -484,15 +487,20 @@ def measure_gamut(space, device, n_hues=360, n_L=300, n_C=200):
         wrap_jump = abs(cL_np[-1] - cL_np[0])
         all_jumps = torch.cat([jumps, wrap_jump.unsqueeze(0)])
 
-        # Cliff
-        max_cliff = 0.0
-        for hi in range(0, n_hues, 5):
-            ci = ci_all[hi].item()
-            cc = mc_all[hi, ci].item()
-            if ci < n_L - 2 and cc > 0.01:
-                post = mc_all[hi, min(ci + 2, n_L - 1)].item()
-                cliff = (cc - post) / cc
-                max_cliff = max(max_cliff, cliff)
+        # Cliff — vectorized over every-5th hue (bit-exact, no .item() in loop)
+        sample_hues = torch.arange(0, n_hues, 5, device=device)
+        ci_s = ci_all[sample_hues]                              # (M,)
+        cc_s = mc_all[sample_hues, ci_s]                        # cusp chroma
+        post_idx = (ci_s + 2).clamp(max=n_L - 1)
+        post_s = mc_all[sample_hues, post_idx]                  # 2-step-after chroma
+        # Apply original conditions: ci < n_L-2 AND cc > 0.01
+        valid_mask = (ci_s < n_L - 2) & (cc_s > 0.01)
+        cliffs = torch.where(valid_mask, (cc_s - post_s) / cc_s.clamp(min=1e-30),
+                             torch.zeros_like(cc_s))
+        max_cliff = cliffs.max().item() if cliffs.numel() > 0 else 0.0
+        # Original: max_cliff starts at 0.0, so negative cliffs (post > cc, can't happen
+        # if monotonic but possible after cusp anomalies) would be ignored. Match that:
+        max_cliff = max(max_cliff, 0.0)
 
         # Gamut volume (fraction of L×C grid that's in-gamut)
         total_in_gamut = (mc_all > 0.001).float().mean().item()
@@ -520,9 +528,8 @@ def measure_gamut(space, device, n_hues=360, n_L=300, n_C=200):
         worst_hue_idx = boundary_rel_per_hue.argmax().item()
         worst_hue_jump = boundary_rel_per_hue[worst_hue_idx].item()
 
-        # Cusp anomaly detection — find cusp-drop zones
+        # Cusp anomaly detection — find cusp-drop zones (cL_list pre-materialized above)
         anomalies = []
-        cL_list = [cL_np[i].item() for i in range(n_hues)]
         for i in range(n_hues):
             j = (i + 1) % n_hues
             jump = abs(cL_list[j] - cL_list[i])
@@ -567,7 +574,7 @@ def measure_gamut(space, device, n_hues=360, n_L=300, n_C=200):
             "boundary_worst_jump": worst_hue_jump,
             "anomalies": anomalies,
             "dead_zones": dead_zones,
-            "cusps": [{"hue": i, "L": cL_np[i].item(), "C": cC_np[i].item()}
+            "cusps": [{"hue": i, "L": cL_list[i], "C": cC_list[i]}
                       for i in range(n_hues)],
         }
 

@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
+*.pyo
 results/
-*.json
-!core/constants.py
+.pytest_cache/
 .DS_Store
