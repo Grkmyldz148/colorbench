@@ -13,6 +13,7 @@ from .cielab import CIELab
 from .pwL import PiecewiseLinearL
 from .enrichment import LGatedHueEnrichment, ChromaPreservingHueRotation
 from .neutral import neutral_blend, NCLut
+from .helmct import HelmCT
 from . import transfer
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "ChromaPreservingHueRotation",
     "neutral_blend",
     "NCLut",
+    "HelmCT",
     "transfer",
 ]
