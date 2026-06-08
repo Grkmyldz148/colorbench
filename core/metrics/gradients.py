@@ -25,7 +25,9 @@ from ._common import (
     xyz_to_cielab,
 )
 # Bridge to existing CIEDE2000 implementation (gpu_de.py is shared infrastructure)
-from ..gpu_de import ciede2000
+from ..rulers import get_ruler as _get_ruler
+
+_step_ruler = _get_ruler("spacing")  # uniformity -> spacing ruler (Perceptia-Spacing); notebook 2026-05-30
 
 CHUNK = 5000
 PI = 3.141592653589793
@@ -57,7 +59,7 @@ def _gradient_chunk(space, pair_xyz_chunk, S, ms, msi, d65):
 
     # CV via consecutive ΔE2000
     cl1, cl2 = cielab[:, :-1], cielab[:, 1:]
-    de = ciede2000(cl1, cl2)
+    de = _step_ruler(cl1, cl2)
     md = de.mean(dim=1)
     sd = de.std(dim=1)
     ok = md > 0.001

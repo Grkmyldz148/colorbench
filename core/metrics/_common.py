@@ -8,11 +8,9 @@ import torch
 
 
 # RGB→XYZ matrices (D65), float-list form for lazy device/dtype materialization
-_M_SRGB_LIST = [
-    [0.4124564, 0.3575761, 0.1804375],
-    [0.2126729, 0.7151522, 0.0721750],
-    [0.0193339, 0.1191920, 0.9503041],
-]
+# cycle 36 — sRGB consolidated to 17-decimal canonical via cs/constants.py
+from ..cs.constants import M_SRGB as _M_SRGB_TENSOR_CANONICAL
+_M_SRGB_LIST = _M_SRGB_TENSOR_CANONICAL.tolist()
 _M_P3_LIST = [
     [0.4865709486482162, 0.26566769316909306, 0.1982172852343625],
     [0.2289745640697488, 0.6917385218365064,  0.079286914093745],

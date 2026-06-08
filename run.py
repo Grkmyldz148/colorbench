@@ -41,7 +41,7 @@ torch.set_default_dtype(torch.float64)
 # ── Color spaces ─────────────────────────────────────────────────────────────
 # Refactored modular spaces (Phase 1-6):
 from core.cs import (
-    OKLab, OKLab32, CIELab, HelmCT,
+    OKLab, OKLab32, CIELab, Perceptia, Engineered, HelmCT, HelmCT_PathBA, HelmCT_minimal, HelmCT_M1M2,
     IPT, JzAzBz, ICtCp, CAM16UCS, DIN99d,
     IPTCanonical, JzAzBzCanonical, CAM16UCSCanonical, DIN99dCanonical,
 )
@@ -136,11 +136,33 @@ def build_space(space_arg, json_path, device, canonical=False, dtype=torch.float
         return OKLab32(device=device, dtype=dtype)
     elif s == "cielab":
         return CIELab(device=device, dtype=dtype)
+    elif s == "perceptia":
+        return Perceptia(device=device, dtype=dtype)
+    elif s == "engineered" or s == "substrate":
+        return Engineered(device=device, dtype=dtype)
     elif s == "helmct" or s == "ct" or s == "genspace":
         if not json_path:
             print(f"Error: {s} requires --json path", file=sys.stderr)
             sys.exit(1)
         return HelmCT(json_path, device=device, dtype=dtype)
+    elif s == "helmctpathba" or s == "pathba":
+        if not json_path:
+            print(f"Error: {s} requires --json path (HelmCT v0.11.1 base params)", file=sys.stderr)
+            sys.exit(1)
+        # Cycle 25-28 default: α=-3°, σ=10° uniform across 6 primaries
+        return HelmCT_PathBA(json_path, device=device, dtype=dtype)
+    elif s == "helmctminimal" or s == "minimal":
+        if not json_path:
+            print(f"Error: {s} requires --json path (HelmCT v0.11.1 base params)", file=sys.stderr)
+            sys.exit(1)
+        # Cycle 40-41: 19 params (M1+M2+depcubic only). Hedef 3 candidate.
+        return HelmCT_minimal(json_path, device=device, dtype=dtype)
+    elif s == "helmctm1m2" or s == "m1m2":
+        if not json_path:
+            print(f"Error: {s} requires --json path (HelmCT v0.11.1 base params)", file=sys.stderr)
+            sys.exit(1)
+        # Cycle 43: 18 params (M1+M2+plain_cbrt). STRICT Hedef 3 candidate (= OKLab budget).
+        return HelmCT_M1M2(json_path, device=device, dtype=dtype)
     # GenSpace family (refactored Phase 7, dtype/device-aware):
     elif s == "genenriched":
         if not json_path:

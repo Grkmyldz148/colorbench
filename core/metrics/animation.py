@@ -11,7 +11,9 @@ from ._common import (
     _M_SRGB_LIST, _D65_LIST,
     matrix, vec, srgb_to_linear, linear_to_srgb, xyz_to_cielab,
 )
-from ..gpu_de import ciede2000
+from ..rulers import get_ruler as _get_ruler
+
+_step_ruler = _get_ruler("spacing")  # uniformity -> spacing ruler (Perceptia-Spacing); notebook 2026-05-30
 
 
 _ANIM_PAIRS = [
@@ -51,7 +53,7 @@ def measure_eased_animation(space, device=None) -> dict:
         xyz_q = srgb_to_linear(rgb8) @ ms.T
         cielab = xyz_to_cielab(xyz_q, d65)
 
-        de = ciede2000(cielab[:-1], cielab[1:])
+        de = _step_ruler(cielab[:-1], cielab[1:])
         mask = de > 0.001
         if mask.sum() > 1:
             cv = (de[mask].std() / (de[mask].mean() + 1e-10) * 100).item()
@@ -134,7 +136,7 @@ def measure_animation(space, device=None) -> dict:
         xyz_q = srgb_to_linear(s8) @ ms.T
         cielab = xyz_to_cielab(xyz_q.clamp(min=1e-10), d65)
 
-        de = ciede2000(cielab[:-1], cielab[1:])
+        de = _step_ruler(cielab[:-1], cielab[1:])
         cv = (de.std() / de.mean()).item() if de.mean() > 0.001 else 0
         step_ratio = (de.max() / de.min()).item() if de.min() > 0.001 else float("inf")
 

@@ -63,12 +63,9 @@ PALETTES = {
     ],
 }
 
-# sRGB → XYZ (D65), Bradford-adapted matrix per IEC 61966-2-1 / Lindbloom.
-_M_SRGB = torch.tensor([
-    [0.4124564, 0.3575761, 0.1804375],
-    [0.2126729, 0.7151522, 0.0721750],
-    [0.0193339, 0.1191920, 0.9503041],
-], dtype=torch.float64)
+# sRGB → XYZ (D65), Bradford-adapted IEC 61966-2-1 / Lindbloom 17-decimal canonical
+# cycle 36 — consolidated to cs/constants.py
+from core.cs.constants import M_SRGB as _M_SRGB
 _D65 = torch.tensor([0.95047, 1.0, 1.08883], dtype=torch.float64)
 
 

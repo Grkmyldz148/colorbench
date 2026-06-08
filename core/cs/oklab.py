@@ -34,11 +34,8 @@ _M2_32_LIST = [
     [1.9779984951, -2.4285922050,  0.4505937099],
     [0.0259040371,  0.7827717662, -0.8086757660],
 ]
-_M_SRGB = [
-    [0.4124564, 0.3575761, 0.1804375],
-    [0.2126729, 0.7151522, 0.0721750],
-    [0.0193339, 0.1191920, 0.9503041],
-]
+from .constants import M_SRGB as _M_SRGB_TENSOR
+_M_SRGB = _M_SRGB_TENSOR.tolist()  # 17-decimal canonical (cycle 36 consolidation)
 
 
 class OKLab(ColorSpace):

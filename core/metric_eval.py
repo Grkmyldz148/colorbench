@@ -321,11 +321,8 @@ def load_human_feedback(datasets_dir: str):
     data = json.load(open(path))
     judgements = data["judgements"]
 
-    _M_SRGB = np.array([
-        [0.4124564, 0.3575761, 0.1804375],
-        [0.2126729, 0.7151522, 0.0721750],
-        [0.0193339, 0.1191920, 0.9503041],
-    ])
+    from .cs.constants import M_SRGB as _M_SRGB_CANONICAL  # cycle 36 — 17-decimal
+    _M_SRGB = _M_SRGB_CANONICAL.numpy()
 
     def hex_to_xyz(h):
         h = h.lstrip("#")
@@ -345,7 +342,15 @@ def load_human_feedback(datasets_dir: str):
 # ── MetricSpace wrapper ─────────────────────────────────────────────────────────
 
 def _load_metric_space(metric_json: str, repo_root: str):
-    """Load MetricSpace from params JSON via helmlab src."""
+    """Load a metric space. Two paths:
+      - .npy  -> black-box ExternalMetricSpace adapter (ANY architecture, e.g.
+                 regime_family_v2 / alpha_v5_A2). ColorBench's datasets / STRESS /
+                 Bradford CAT stay frozen; the space only provides distance().
+      - .json -> bundled MetricSpace parametric family (v21-era 45-param format).
+    """
+    if str(metric_json).endswith(".npy"):
+        from core.external_space import load_regime_champion
+        return load_regime_champion(metric_json)
     src_path = os.path.join(repo_root, "src")
     if src_path not in sys.path:
         sys.path.insert(0, src_path)

@@ -52,11 +52,8 @@ class NCLut:
         sp = self.space
         device, dtype = sp.device, sp.dtype
 
-        ms = torch.tensor([
-            [0.4124564, 0.3575761, 0.1804375],
-            [0.2126729, 0.7151522, 0.0721750],
-            [0.0193339, 0.1191920, 0.9503041],
-        ], device=device, dtype=dtype)
+        from .constants import M_SRGB
+        ms = M_SRGB.to(device=device, dtype=dtype)
 
         # sRGB grays: capture matrix row-sum rounding noise
         v = torch.linspace(0.001, 0.999, self.n_srgb, device=device, dtype=dtype)

@@ -25,11 +25,7 @@ from ..gpu_de import ciede2000
 
 PI = np.pi
 # Module-level constants kept on CPU float64; cast to space dtype/device at use site via _to().
-_M_SRGB = torch.tensor([
-    [0.4124564, 0.3575761, 0.1804375],
-    [0.2126729, 0.7151522, 0.0721750],
-    [0.0193339, 0.1191920, 0.9503041],
-], dtype=torch.float64)
+from ..cs.constants import M_SRGB as _M_SRGB  # cycle 36 — 17-decimal canonical
 _M_P3 = torch.tensor([
     [0.4865709486482162, 0.26566769316909306, 0.1982172852343625],
     [0.2289745640697488, 0.6917385218365064, 0.079286914093745],

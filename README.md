@@ -1,176 +1,135 @@
 # ColorBench
 
-A rigorous, GPU-accelerated benchmark for comparing perceptual color spaces.
+A rigorous, GPU-accelerated benchmark for comparing perceptual color spaces — and
+for auditing *its own* fairness. ColorBench measures everything, hides nothing, and
+ships a tiered-verdict layer so a single win-count never misleads you.
 
-ColorBench has **two evaluation modes**, used for different scientific
-questions. Both apply identical pre-processing to every space, are
-deterministic, and ship with documented fairness notes.
+## Two evaluation modes
 
-| Mode | What it tests | Tooling | Used by |
-|------|---------------|---------|---------|
-| **`compare` (gradient/palette)** | 90 metrics × 3038 gradient pairs across sRGB/P3/Rec.2020 — gamut geometry, gradient quality, palette uniformity, hue stability, cusp behaviour | PyTorch (`core/spaces.py`, `core/spaces_literature.py`) | "Is this space good for color *generation*?" |
-| **`metric` (STRESS)** | 4 perceptual datasets (COMBVD 3813, MacAdam 1974 128, He~2022 82, Human Feedback 3552) scored with the STRESS estimator | NumPy (`core/metric_eval.py`) — delegates CAM16-UCS, CIECAM02-UCS, $J_z a_z b_z$ to **`colour-science`** for canonical reference values | "Is this space good for color *difference prediction*?" |
+Both modes apply identical pre-processing to every space, are deterministic, and
+ship documented fairness notes.
 
-The two modes share dataset loaders, the STRESS formula, and the
-Bradford CAT pre-processing convention; they differ only in what they
-measure (gradient quality vs ΔE prediction). See [§ Fairness](#fairness)
-below for what each mode does and does not control for.
+| Mode | Question | What it scores | Engine |
+|------|----------|----------------|--------|
+| **`compare`** (gradient / generation) | "Is this space good for *generating* color?" | 94 metrics across sRGB / P3 / Rec.2020 — gamut geometry & cusps, gradient/banding quality, palette uniformity, hue stability, round-trip precision | PyTorch (`core/cs/`, `core/metrics/`) |
+| **`metric`** (STRESS / difference) | "Is this space good for *predicting color difference*?" | STRESS on human pair datasets (COMBVD 3813, MacAdam 1974 128, Human-Feedback 3552) | NumPy (`core/metric_eval.py`), CAM16-UCS/Jzazbz via **colour-science** |
 
-## Why
-
-Every color space claims to be "perceptually uniform" but there's no standard way to verify this. Existing comparisons cherry-pick metrics, use inconsistent test conditions, or hide CIE Lab's structural advantages.
-
-ColorBench measures everything and hides nothing. Each result includes fairness notes explaining which metrics favor which spaces and why.
-
-## Quick Start
+## Quick start
 
 ```bash
-# Requirements: Python 3.11+, PyTorch, NumPy, colour-science (≥0.4)
+# Python 3.11+, PyTorch, NumPy, colour-science (≥0.4)
 pip install torch numpy colour-science
 
-# Mode 1 — gradient/palette benchmark
-python run.py oklab cielab                        # head-to-head 90 metrics
-python run.py oklab genspace --json params.json   # custom JSON space
+# compare mode — head-to-head over 94 generation metrics
+python run.py oklab cielab
+python run.py oklab genspace --json path/to/params.json
 
-# Mode 2 — STRESS evaluation (perceptual distance prediction)
-python run.py metric --json metricspace_v21.json  # COMBVD/MacAdam/HumFB STRESS
-
-# Output: terminal summary + JSON reports + HTML comparison in results/
+# metric mode — STRESS (perceptual-difference prediction)
+python run.py metric --json path/to/metricspace.json
 ```
 
-## Fairness
+Output: terminal summary + JSON reports + an HTML comparison, all written to
+`results/` (which is **git-ignored** — it holds run artifacts, not source).
 
-We use third-party reference implementations wherever possible to remove
-"author-implements-its-own-baselines" bias:
+## The three runners (what each one is for)
 
-- **CAM16-UCS** (Li et al. 2017): `colour.XYZ_to_CAM16UCS`. Default
-  conditions (`L_A=64 cd/m²`, `Y_b=20%`, average surround). The earlier
-  ColorBench shipped a hand-rolled NumPy implementation that produced
-  ~22 STRESS points high on COMBVD; replaced 2026-05-06.
-- **CIECAM02-UCS** (Luo et al. 2006): `colour.XYZ_to_CIECAM02` + JMh →
-  CAM02-UCS via `colour.JMh_CIECAM02_to_CAM02UCS`. Same conditions as
-  CAM16-UCS.
-- **Jzazbz** (Safdar et al. 2017): `colour.XYZ_to_Jzazbz`. HDR-aware
-  PQ transfer with the published 10,000 cd/m² peak constant.
-- **CIEDE2000**, **CIE94**, **CIE Lab**, **DIN99**, **OKLab**: own
-  NumPy implementations, validated against `colour-science` to within
-  ±0.5 STRESS points across all three datasets.
-- **Bradford CAT** is applied per-pair to all spaces that don't model
-  multi-illuminant whites internally.
+| Script | Purpose |
+|--------|---------|
+| **`run.py`** | The main entry point. `compare` mode (pass ≥1 built-in space name or `--json`) and `metric` mode (`run.py metric …`). Everything below is a niche side-tool. |
+| **`run_gma_benchmark.py`** | A **gamut-mapping** benchmark (Display-P3 → sRGB): scores 7 mapping algorithms (clip, OKLab/CIELab LCh, etc.) on 1000 P3-extreme colors. Not a space test — an algorithm test. |
+| **`run_near_mono.py`** | A **near-monochrome palette** diagnostic: in space *S*'s coordinates, how 1-dimensional does palette *P* look (PCA variance on the dominant axis)? Used for the "near-mono" landing claim. |
 
-PyTorch reference classes in `core/spaces_literature.py` (used by the
-`compare` mode) are **separately implemented** because that mode requires
-batched GPU evaluation and gradient/palette tests need full-D adaptation
-to make achromatic axis exactly zero (D=1 by design). They are
-intentionally not bit-identical to `metric_eval`'s reference values, but
-both are documented and reproducible.
+## Fairness — and how it's enforced
 
-## What It Measures
+ColorBench's design goal is to be a *trustworthy ruler*, so its own fairness is
+audited and corrected, not assumed. Full audit:
+`research/notebook/02-space-pool/COLORBENCH_FAIRNESS_AUDIT.md`.
 
-### 83 Metrics in 12 Categories
+**Mechanical integrity (verified, ~clean):**
+- **Third-party ground truth** — CIEDE2000 (CIE 224:2017), CIELab, CIE94, CAM16-UCS,
+  Jzazbz come from `colour-science`, not hand-rolled. STRESS formula is scale-invariant
+  (verified end-to-end). Deterministic (fixed seeds).
+- **Reference spaces can't win** — a space used as a metric's reference is excluded
+  from win-counting.
+- **Self-referential scores excluded** — when CIELab trivially scores 0 on a "deviation
+  from CIELab" metric, that 0 is detected and dropped (`core/judge_provenance.py`).
+- **Bradford CAT** applied per-pair to spaces that don't model multi-illuminant whites.
 
-| Category | Count | What It Tests |
-|----------|-------|---------------|
-| **Gamut Geometry** | 27 | Cusps, monotonicity, cliff, smoothness, boundary continuity, invalid cusps, bad hues — across sRGB, P3, and Rec.2020 |
-| **Gradient Quality** | 10 | CV mean/p95/max, hue drift, banding, 3-color CV, subset CVs (bright, dark, high-chroma, cross-lightness, near-achromatic) |
-| **Application** | 12 | Palette L* spacing, tint/shade hue, data viz, multi-stop gradient, WCAG contrast, harmony accuracy, photo gamut mapping, eased animation, shade palette |
-| **Perceptual Accuracy** | 5 | Munsell Value/Hue spacing, MacAdam ellipse isotropy, hue leaf constancy, CIE Lab hue agreement |
-| **Numerical Stability** | 3 | Round-trip precision across 16.7M colors (sRGB, P3, Rec.2020) |
-| **Structural** | 8 | OOG excursion, hue reversals, primary hue discontinuity, negative LMS, extreme chroma amplification |
-| **Advanced** | 6 | 1000-trip RT accumulation, 8-bit quantization, channel monotonicity, Jacobian condition, cross-gamut consistency |
-| **Hue** | 2 | Hue RMS, primary L range |
-| **Achromatic** | 2 | Gray ramp chroma (sRGB + pure D65) |
-| **Special** | 3 | Blue-white midpoint G/R, red-white midpoint, yellow chroma |
-| **Banding** | 2 | Invisible gradient steps, duplicate 8-bit steps |
-| **Accessibility** | 2 | CVD simulation (protan/deutan) gradient dE |
+**Structural skews — found by audit, corrected:**
+1. **Gamut was over-weighted** (31/94 metrics = ~10 sub-metrics × 3 gamuts → 3× weight).
+   `core/fair_verdict.py` gives gamut metrics weight 1/3.
+2. **The spacing ruler wasn't neutral** (Perceptia-Spacing ≈ CIELab; gradient rankings
+   flipped by ruler choice). `core/rulers.py` now makes the `spacing` ruler a **consensus**
+   of three uniform spaces {Perceptia-Spacing, CAM16-UCS, Jzazbz}, removing the lever.
+3. **11 metrics judged hue against CIELab as truth** (penalizing hue-correcting spaces).
+   `fair_verdict.py` drops them; hue is instead judged by real human data.
 
-### 3038 Gradient Pairs
+## The fairness / verdict layer (`core/`)
 
-- **sRGB** (1552): primaries, complementary, hue sweep, saturation, lightness, near-achromatic, dark/bright extremes, gamut boundary, skin tones, earth tones, warm/cool transitions, very similar colors, neon, high luminance, UI shade palettes, 1000 random
-- **Display P3** (749): primaries, cross-gamut, hue sweep, near-achromatic, boundary, lightness, 500 random
-- **Rec.2020** (743): primaries, cross-gamut, hue sweep, near-achromatic, boundary, lightness, 500 random
+These modules turn a raw comparison into a verdict you can trust:
 
-## Supported Spaces
-
-Built-in:
-- **OKLab** — Bjorn Ottosson (2020), CSS Color Level 4 standard
-- **CIE Lab** — CIE (1976), legacy standard
-
-From JSON checkpoint:
-- **GenSpace** — M1/gamma/M2 pipeline with optional L correction
-- **GenSpace+BlueFix** — GenSpace with blue channel post-processing
-- **Naka-Rushton** — Neurophysiological cone response + enrichment
-- **Custom** — Any forward/inverse function pair
-
-## Fairness
-
-ColorBench documents its own biases. Every JSON report includes a `_methodology` section with fairness notes:
-
-**CIEDE2000 structural bias** (medium): Gradient CV and related metrics use CIEDE2000, which is built on CIE Lab. This gives CIE Lab-adjacent spaces a structural advantage. No independent alternative exists.
-
-**Munsell data favors CIE Lab** (medium): CIE Lab was designed to linearize Munsell Value. High Munsell Value scores mean agreement with CIE Lab, not necessarily perceptual accuracy.
-
-**MacAdam ellipses are 1942 data** (medium): Local isotropy is measured at MacAdam's original chromaticity points. Spaces optimized for different regions may score poorly despite being perceptually superior.
-
-**Self-referential detection**: When a space trivially scores zero on a test because it IS the reference frame (e.g., CIE Lab on "hue agreement with CIE Lab"), the score is marked `(ref)` and excluded from win counting.
-
-## Output
-
-**Terminal**: Full metric breakdown per space + comparison table with winners.
-
-**JSON**: Complete raw data for every metric, gradient pair detail, cusp geometry, and methodology notes. Machine-readable for further analysis.
-
-**HTML**: Visual comparison report with scorecard, head-to-head matrix, radar chart, and per-category tables.
+| Module | Role |
+|--------|------|
+| `judge_provenance.py` | Tags each of the 94 metrics by **who judges it** — human-psychophysical / structural / human-fit-ruler / CIELab-reference — and reports W-L-T split by tier (ceiling-bound CIELab-reference metrics flagged, never in the headline). |
+| `human_pool.py` | **Best-of-breed human panel.** Grounds each property in the curated [`color-perception-datasets`](https://github.com/Grkmyldz148/color-perception-datasets) pool (43 datasets): real JND ellipses (MacAdam 1942, Luo-Rigg, Koenderink 2026 3D), constant-hue loci (Hung-Berns, Ebner-Fairchild, Munsell), H-K & CAT. 6 schema-aware judges. |
+| `fair_verdict.py` | Weighted W-L-T applying the 3 fixes above + folds in the human panel. `fair_verdict_full(space_a, space_b, comparison)`. |
+| `rulers.py` | Modular human-fit rulers (difference / threshold / spacing-consensus) — each property measured with the right instrument. |
 
 ## Architecture
 
 ```
 colorbench/
-  run.py                          # CLI runner (39 test functions + compare)
+  run.py                  # main runner — compare + metric modes
+  run_gma_benchmark.py    # side-tool: gamut-mapping algorithm benchmark
+  run_near_mono.py        # side-tool: near-monochrome palette diagnostic
   core/
-    spaces.py                     # 8 space implementations (single source of truth)
-    pairs.py                      # 3038 gradient pair generator (deterministic)
-    gpu_metrics.py                # Core metrics (round-trip, gradient, gamut, etc.)
-    gpu_metrics_advanced.py       # Advanced metrics (CVD, animation, Jacobian, etc.)
-    gpu_metrics_perceptual.py     # Perceptual/application metrics (Munsell, MacAdam, etc.)
-    constants.py                  # Hardcoded data (Munsell, MacAdam, WCAG — zero file deps)
-    comparison.py                 # 83 METRIC_DEFS + winner logic + head-to-head
-    html_report.py                # HTML report generator
-    report.py                     # JSON + terminal output
+    cs/                   # color-space implementations (OKLab, CIELab, HelmCT, …) + literature canon
+    metrics/              # the 94 compare-mode metric implementations
+    comparison.py         # METRIC_DEFS (94) + winner/tie logic + head-to-head
+    metric_eval.py        # metric mode: STRESS on human datasets (colour-science baselines)
+    rulers.py             # modular human-fit rulers (incl. spacing consensus)
+    judge_provenance.py   # per-metric judge tiering + tiered verdict
+    human_pool.py         # 43-dataset best-of-breed human panel
+    fair_verdict.py       # gamut-deweighted, CIELab-ceiling-free weighted verdict
+    gpu_de.py             # GPU CIEDE2000
+    report.py / html_report.py   # terminal / JSON / HTML output
+    pairs.py              # deterministic gradient-pair generator
+  tests/                  # pin tests vs colour-science + snapshot regression
+  scripts/                # category report, claims generator
+  results/                # run artifacts — GIT-IGNORED (not source)
 ```
 
-- Pure PyTorch — runs on CUDA GPU or CPU (automatic fallback)
-- float64 precision throughout
-- All random tests use fixed seeds — fully deterministic
-- Zero external data dependencies — Munsell/MacAdam constants are hardcoded
+- Runs on CUDA GPU or CPU (automatic fallback), float64 throughout.
+- All random tests use fixed seeds — fully deterministic.
+- The `metric` mode reads datasets from `../datasets`; the human pool reads the
+  separate `color-perception-datasets` repo (path via `COLOR_PERCEPTION_POOL`).
 
-## Adding a Custom Space
+## Reading a result
+
+Never read the raw 94-metric win-count as the verdict — it over-weights gamut and
+includes CIELab-ceiling metrics. Instead:
 
 ```python
-from core.cs import CustomSpace
+from core.comparison import compare_spaces
+from core.fair_verdict import fair_verdict_full
+cmp = compare_spaces(results_by_space)
+print(fair_verdict_full(space_a_obj, space_b_obj, cmp, "A", "B"))
+# → gamut-balanced, CIELab-ceiling-free weighted W-L-T + the real human-data panel
+```
 
-def my_forward(xyz):  # (N, 3) tensor → (N, 3) tensor
-    ...
+## Tests
 
-def my_inverse(lab):  # (N, 3) tensor → (N, 3) tensor
-    ...
-
-space = CustomSpace("My Space", my_forward, my_inverse)
+```bash
+python -m pytest tests/      # pins vs colour-science + snapshot regression
 ```
 
 ## Citation
 
-If you use ColorBench in research or tooling:
-
 ```
-ColorBench: A rigorous benchmark for perceptual color spaces.
+ColorBench: A rigorous, self-auditing benchmark for perceptual color spaces.
 https://github.com/Grkmyldz148/colorbench
 ```
 
 ## License
 
-MIT
-
-## Author
-
-[Gorkem Yildiz](https://gorkemyildiz.com)
+MIT — [Görkem Yıldız](https://gorkemyildiz.com)

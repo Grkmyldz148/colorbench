@@ -46,11 +46,8 @@ from mlp_helmct_chroma_posthuewarp_space import MLPHelmCTChromaPostHueWarp  # no
 
 
 # ─── Color matrices (D65) ──────────────────────────────────────────────────
-M_SRGB = torch.tensor([
-    [0.4124564, 0.3575761, 0.1804375],
-    [0.2126729, 0.7151522, 0.0721750],
-    [0.0193339, 0.1191920, 0.9503041],
-], dtype=torch.float64)
+# cycle 36 — sRGB matrix consolidated to cs/constants.py 17-decimal canonical
+from core.cs.constants import M_SRGB
 M_SRGB_INV = torch.linalg.inv(M_SRGB)
 
 # Display-P3 (D65) — standard matrix from CSS Color 4 / Apple

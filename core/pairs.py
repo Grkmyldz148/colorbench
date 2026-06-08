@@ -24,11 +24,8 @@ def generate_all_pairs(device):
     """Returns (pairs_xyz, pair_labels) where pairs_xyz is (N, 2, 3) XYZ tensor
     and pair_labels is list of (category, description) tuples."""
 
-    M_SRGB = torch.tensor([
-        [0.4124564, 0.3575761, 0.1804375],
-        [0.2126729, 0.7151522, 0.0721750],
-        [0.0193339, 0.1191920, 0.9503041],
-    ], device=device, dtype=torch.float64)
+    from .cs.constants import M_SRGB as _M_SRGB_CANONICAL
+    M_SRGB = _M_SRGB_CANONICAL.to(device=device, dtype=torch.float64)
 
     pairs = []
     labels = []

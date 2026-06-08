@@ -11,7 +11,9 @@ from ._common import (
     _M_SRGB_LIST, _M_P3_LIST, _D65_LIST,
     matrix, vec, srgb_to_linear, linear_to_srgb, xyz_to_cielab,
 )
-from ..gpu_de import ciede2000
+from ..rulers import get_ruler as _get_ruler
+
+_step_ruler = _get_ruler("spacing")  # uniformity -> spacing ruler (Perceptia-Spacing); notebook 2026-05-30
 
 
 _SRGB_GRADIENTS = [
@@ -91,7 +93,7 @@ def measure_perceptual_banding(space, device=None) -> dict:
         xyz_q = srgb_to_linear(s8) @ gamut_mat.T
         cielab = xyz_to_cielab(xyz_q.clamp(min=1e-10), d65)
 
-        de = ciede2000(cielab[:-1], cielab[1:])
+        de = _step_ruler(cielab[:-1], cielab[1:])
         invisible = (de < 1.0).sum().item()
         duplicate = ((s8[1:] * 255).to(torch.int32) ==
                      (s8[:-1] * 255).to(torch.int32)).all(dim=1).sum().item()
