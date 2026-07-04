@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Regenerate the ColorBench-derived block of the site's claims.ts.
+"""Regenerate every ColorBench-derived number on the site from the canonical run.
 
 Reads the canonical ColorBench result JSONs (OKLab + GenSpace), computes the
-head-to-head record and per-category breakdown via the SAME comparison engine
-the benchmark uses, and rewrites the `record:` and `categories:` fields of
-landing/landing-new/src/data/claims.ts in place. Run this after re-running
-ColorBench so the whole site updates from one place.
+head-to-head record via the SAME comparison engine the benchmark uses, and
+rewrites in place:
+
+  1. claims.ts    — `record:` + `categories:` + the headline metric block
+                    (cusps, roundtrip, gradient CVs, G/R, ...)
+  2. genspace-results.ts — the full per-metric `genspaceResults` table
+                    (the benchmark page's Metric Explorer)
+
+Run this after re-running ColorBench so the whole site updates from one place.
+Nothing on the benchmark page should ever be hand-edited.
 
 Usage:  python scripts/generate_claims.py
-        python scripts/generate_claims.py --check     # verify claims.ts matches, exit 1 on drift
+        python scripts/generate_claims.py --check     # verify site matches, exit 1 on drift
 """
 import json
 import re
@@ -20,25 +26,53 @@ CB = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(CB))
 from core.comparison import compare_spaces  # noqa: E402
 
-CLAIMS = CB.parent / "helmlab-main-repo" / "landing" / "landing-new" / "src" / "data" / "claims.ts"
+DATA = CB.parent / "helmlab-main-repo" / "landing" / "landing-new" / "src" / "data"
+CLAIMS = DATA / "claims.ts"
+TABLE = DATA / "genspace-results.ts"
 OK = CB / "results" / "OKLab.json"
 GS = CB / "results" / "HelmCT(genspace_v0.11.1.json).json"
 
+# Metrics whose raw score is a fraction but is displayed as a percentage
+# (matches the historical convention of claims.ts: darkGradientCV 0.3724 → 37.24).
+FRACTION_TO_PCT = {
+    "Gradient CV (mean)", "Gradient CV (p95)", "Bright gradient CV (L>0.6)",
+    "Dark gradient CV (L<0.4)", "High-chroma gradient CV",
+    "Cross-lightness gradient CV", "Near-achromatic gradient CV",
+    "Worst-case gradient CV",
+}
 
-def compute():
+UNIT_MAP = {"deg": "°", "dE": "ΔE", "x": "×", "/360": "cusps", "C*": "C*"}
+
+
+def load_tests():
     ok = json.load(open(OK))
     gs = json.load(open(GS))
     cmp = compare_spaces({ok["space"]: ok, gs["space"]: gs})
+    gs_name = gs["space"]
+    tests = []
+    for t in cmp.tests:
+        winner = "tie" if t.is_tie else ("genspace" if gs_name in (t.winner or "") else "oklab")
+        tests.append({
+            "name": t.metric.name,
+            "category": t.metric.category,
+            "unit": t.metric.unit,
+            "fmt": t.metric.format_str,
+            "lower": t.metric.lower_is_better,
+            "ok": t.scores["OKLab"],
+            "gs": t.scores[gs_name],
+            "winner": winner,
+        })
+    return tests
+
+
+def compute(tests):
     cat = defaultdict(lambda: [0, 0, 0])
     rec = [0, 0, 0]
-    for t in cmp.tests:
-        c = t.metric.category
-        if t.is_tie:
-            cat[c][2] += 1; rec[2] += 1
-        elif t.winner and "OKLab" in t.winner:
-            cat[c][1] += 1; rec[1] += 1
-        else:
-            cat[c][0] += 1; rec[0] += 1
+    idx = {"genspace": 0, "oklab": 1, "tie": 2}
+    for t in tests:
+        i = idx[t["winner"]]
+        cat[t["category"]][i] += 1
+        rec[i] += 1
     cats = sorted(cat.items(), key=lambda kv: (-kv[1][0], kv[0]))
     return rec, cats
 
@@ -52,20 +86,137 @@ def render(rec, cats):
     return record, "[\n" + "\n".join(lines) + "\n  ]"
 
 
+# ── Metric Explorer table (genspace-results.ts) ─────────────────────────────
+
+def _fmt_num(v, fmt):
+    if fmt == "d":
+        return str(int(round(v)))
+    if fmt.endswith("e"):
+        s = f"{v:{fmt}}"                       # 1.78e-15
+        mant, exp = s.split("e")
+        return f"{float(mant)}e{int(exp)}"     # strip zero-padding
+    return f"{round(v, int(fmt[1:-1])):g}"
+
+
+def _row_values(t):
+    """Return (oklab, genspace, unit) as TS literals following table conventions."""
+    ok, gs, unit, fmt = t["ok"], t["gs"], t["unit"], t["fmt"]
+    if t["name"] in FRACTION_TO_PCT:
+        ok, gs = ok * 100, gs * 100
+    if unit == "/360":  # cusp coverage → "299/360" strings
+        return f'"{int(ok)}/360"', f'"{int(gs)}/360"', "cusps"
+    if unit == "x":     # amplification → "5.79×" strings
+        return f'"{_fmt_num(ok, fmt)}\\u00D7"', f'"{_fmt_num(gs, fmt)}\\u00D7"', "×"
+    disp_unit = UNIT_MAP.get(unit, unit)
+    if fmt == "d" and unit == "":
+        disp_unit = "count"
+    if t["name"].startswith(("Round-trip", "1000-trip")):
+        disp_unit = "max ΔE"
+    return _fmt_num(ok, fmt), _fmt_num(gs, fmt), disp_unit
+
+
+def render_table(tests):
+    rows = []
+    for t in tests:
+        ok, gs, unit = _row_values(t)
+        unit_js = json.dumps(unit)
+        rows.append(
+            "  {\n"
+            f'    name: {json.dumps(t["name"])},\n'
+            f'    category: {json.dumps(t["category"])},\n'
+            f"    oklab: {ok},\n"
+            f"    genspace: {gs},\n"
+            f'    winner: "{t["winner"]}",\n'
+            f"    unit: {unit_js},\n"
+            f"    lowerIsBetter: {'true' if t['lower'] else 'false'},\n"
+            "  },"
+        )
+    return (
+        "export const genspaceResults = [\n"
+        "  // AUTO-GENERATED by colorbench/scripts/generate_claims.py from the\n"
+        "  // canonical result JSONs (OKLab.json + HelmCT(genspace_v0.11.1.json)).\n"
+        "  // Do not hand-edit — re-run the script after a new ColorBench run.\n"
+        + "\n".join(rows)
+        + "\n] as const satisfies readonly GenSpaceMetric[];"
+    )
+
+
+# ── claims.ts headline metric block ─────────────────────────────────────────
+
+def render_headline(tests):
+    by = {t["name"]: t for t in tests}
+
+    def s(name, which, scale=1, nd=None):
+        v = by[name][which] * scale
+        if nd is not None:
+            v = round(v, nd)
+        return v
+
+    def e(name, which):  # scientific literal
+        return _fmt_num(by[name][which], ".2e")
+
+    return f"""cusps: {{
+    sRGB:    {{ genspace: {int(by['sRGB valid cusps']['gs'])}, oklab: {int(by['sRGB valid cusps']['ok'])}, total: 360 }},
+    P3:      {{ genspace: {int(by['P3 valid cusps']['gs'])}, oklab: {int(by['P3 valid cusps']['ok'])}, total: 360 }},
+    Rec2020: {{ genspace: {int(by['Rec2020 valid cusps']['gs'])}, oklab: {int(by['Rec2020 valid cusps']['ok'])}, total: 360 }},
+  }},
+  monotonicity:    {{ sRGB: {int(by['sRGB mono violations']['gs'])}, P3: {int(by['P3 mono violations']['gs'])}, Rec2020: {int(by['Rec2020 mono violations']['gs'])} }},
+  oklabP3MonoViol: {int(by['P3 mono violations']['ok'])},
+  roundtrip: {{
+    sRGB:    {{ genspace: {e('Round-trip sRGB 16.7M', 'gs')},  oklab: {e('Round-trip sRGB 16.7M', 'ok')} }},
+    P3:      {{ genspace: {e('Round-trip P3 16.7M', 'gs')},  oklab: {e('Round-trip P3 16.7M', 'ok')} }},
+    Rec2020: {{ genspace: {e('Round-trip Rec2020 2.1M', 'gs')}, oklab: {e('Round-trip Rec2020 2.1M', 'ok')} }},
+  }},
+  achromaticCstar: {{ genspace: {e('Gray ramp pure C*', 'gs')}, oklab: {e('Gray ramp pure C*', 'ok')} }},
+  munsellValueCV:  {{ genspace: {s('Munsell Value uniformity', 'gs', nd=3)}, oklab: {s('Munsell Value uniformity', 'ok', nd=3)} }},   // % (dL_cv)
+  blueWhiteGR:     {{ genspace: {s('Blue-White midpoint G/R', 'gs', nd=3)}, oklab: {s('Blue-White midpoint G/R', 'ok', nd=3)} }},
+  cuspSmoothness:  {{ genspace: {s('Cusp smoothness (max jump)', 'gs', nd=3)}, oklab: {s('Cusp smoothness (max jump)', 'ok', nd=3)} }},
+  yellowChroma:    {{ genspace: {s('Yellow chroma', 'gs', nd=3)}, oklab: {s('Yellow chroma', 'ok', nd=3)} }},
+  hueDriftMax:     {{ genspace: {s('Max hue drift (non-crossing)', 'gs', nd=1)}, oklab: {s('Max hue drift (non-crossing)', 'ok', nd=1)} }},     // degrees
+  hungBernsMad:    {{ genspace: {s('Hung-Berns hue linearity (mean)', 'gs', nd=3)}, oklab: {s('Hung-Berns hue linearity (mean)', 'ok', nd=3)} }},    // degrees
+  hueAgreementVsCieLab: {s('Hue agreement with CIE Lab', 'gs', nd=1)},                             // degrees (genspace)
+  // Where OKLab wins — stated honestly, single source for the % both ways:
+  deutanStep:      {{ genspace: {s('CVD deutan min step dE', 'gs', nd=3)}, oklab: {s('CVD deutan min step dE', 'ok', nd=3)} }},    // OKLab better
+  nearAchromCV:    {{ genspace: {s('Near-achromatic gradient CV', 'gs', 100, 2)}, oklab: {s('Near-achromatic gradient CV', 'ok', 100, 2)} }},   // OKLab better
+  darkGradientCV:  {{ genspace: {s('Dark gradient CV (L<0.4)', 'gs', 100, 2)}, oklab: {s('Dark gradient CV (L<0.4)', 'ok', 100, 2)} }},   // genspace better
+  frameToFrameCV:  {{ genspace: {s('Animation frame-to-frame CV', 'gs', nd=1)}, oklab: {s('Animation frame-to-frame CV', 'ok', nd=1)} }},"""
+
+
 def main() -> int:
-    rec, cats = compute()
+    tests = load_tests()
+    rec, cats = compute(tests)
     record, categories = render(rec, cats)
-    text = CLAIMS.read_text()
-    new = re.sub(r"record:\s*\{[^}]*\}", f"record: {record}", text, count=1)
-    new = re.sub(r"categories:\s*\[.*?\n  \]", f"categories: {categories}", new, count=1, flags=re.DOTALL)
+
+    claims_text = CLAIMS.read_text()
+    new_claims = re.sub(r"record:\s*\{[^}]*\}", lambda m: f"record: {record}", claims_text, count=1)
+    new_claims = re.sub(r"categories:\s*\[.*?\n  \]", lambda m: f"categories: {categories}", new_claims, count=1, flags=re.DOTALL)
+    new_claims = re.sub(
+        r"cusps: \{.*?frameToFrameCV:[^\n]*",
+        lambda m: render_headline(tests), new_claims, count=1, flags=re.DOTALL,
+    )
+
+    table_text = TABLE.read_text()
+    new_table = re.sub(
+        r"export const genspaceResults = \[.*?\] as const satisfies readonly GenSpaceMetric\[\];",
+        lambda m: render_table(tests), table_text, count=1, flags=re.DOTALL,
+    )
+
     if "--check" in sys.argv:
-        if new == text:
-            print(f"OK — claims.ts matches ColorBench ({rec[0]}-{rec[1]}-{rec[2]})")
+        drift = []
+        if new_claims != claims_text:
+            drift.append("claims.ts")
+        if new_table != table_text:
+            drift.append("genspace-results.ts")
+        if not drift:
+            print(f"OK — site matches ColorBench ({rec[0]}-{rec[1]}-{rec[2]})")
             return 0
-        print(f"DRIFT — claims.ts record/categories differ from ColorBench ({rec[0]}-{rec[1]}-{rec[2]}). Run generate_claims.py.")
+        print(f"DRIFT — {', '.join(drift)} differ from ColorBench ({rec[0]}-{rec[1]}-{rec[2]}). Run generate_claims.py.")
         return 1
-    CLAIMS.write_text(new)
-    print(f"wrote record {rec[0]}-{rec[1]}-{rec[2]} + {len(cats)} categories → {CLAIMS.name}")
+
+    CLAIMS.write_text(new_claims)
+    TABLE.write_text(new_table)
+    print(f"wrote record {rec[0]}-{rec[1]}-{rec[2]} + {len(cats)} categories + headline block → {CLAIMS.name}")
+    print(f"wrote {len(tests)} metric rows → {TABLE.name}")
     return 0
 
 
