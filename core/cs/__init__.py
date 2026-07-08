@@ -30,6 +30,8 @@ from .genspace_legacy import (
 )
 from .research import HueDep, NativePolar, PolarBlend, TwoStage
 from . import transfer
+from .clean_metric_mistral import CleanMetricMistral
+from .triopp_mistral import TriOppMistral
 
 __all__ = [
     "ColorSpace",
@@ -66,4 +68,6 @@ __all__ = [
     "PolarBlend",
     "TwoStage",
     "transfer",
+    "CleanMetricMistral",
+    "TriOppMistral",
 ]
