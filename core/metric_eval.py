@@ -212,14 +212,53 @@ def stress(de_pred: np.ndarray, dv_obs: np.ndarray) -> float:
     return 100.0 * np.sqrt(np.sum(residuals ** 2) / np.sum(dv ** 2))
 
 
+def _avg_ranks(x: np.ndarray) -> np.ndarray:
+    """Ranks with ties assigned their average rank (needed because HumanFB's
+    DV has only 5 distinct levels — without tie-averaging, ρ would depend on
+    sort order within a category)."""
+    x = np.asarray(x, dtype=np.float64)
+    order = np.argsort(x, kind="mergesort")
+    ranks = np.empty(len(x), dtype=np.float64)
+    ranks[order] = np.arange(1, len(x) + 1, dtype=np.float64)
+    _, inv, counts = np.unique(x, return_inverse=True, return_counts=True)
+    sums = np.zeros(counts.shape[0], dtype=np.float64)
+    np.add.at(sums, inv, ranks)
+    return sums[inv] / counts[inv]
+
+
+def spearman_rho(de_pred: np.ndarray, dv_obs: np.ndarray) -> float:
+    """Spearman rank correlation. Higher = better.
+
+    Used for RANK-ONLY datasets (HumanFB): the DV is a 5-level ordinal
+    category scale, so STRESS magnitudes are an artefact of the arbitrary
+    category→number mapping; only the ordering is trusted."""
+    ra = _avg_ranks(de_pred)
+    rb = _avg_ranks(dv_obs)
+    ra -= ra.mean()
+    rb -= rb.mean()
+    denom = np.sqrt(np.sum(ra * ra) * np.sum(rb * rb))
+    return float(np.sum(ra * rb) / denom) if denom > 0 else 0.0
+
+
 # ── Dataset loaders ─────────────────────────────────────────────────────────────
+
+def _require_file(path: str, what: str) -> str:
+    """Fail with an actionable message instead of a bare FileNotFoundError."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"{what} not found: '{path}'. ColorBench's metric mode reads "
+            f"datasets from <repo>/datasets — make sure the datasets "
+            f"directory is populated (see README, 'Data' section).")
+    return path
+
 
 def load_combvd(datasets_dir: str):
     """3813 XYZ color pairs with visual difference scores (multi-illuminant).
 
     Returns (xyz1, xyz2, whites, dv, sub_datasets).
     """
-    path = os.path.join(datasets_dir, "combvd_pairs.json")
+    path = _require_file(os.path.join(datasets_dir, "combvd_pairs.json"),
+                         "COMBVD pairs (combvd_pairs.json)")
     data = json.load(open(path))
     xyz1 = np.array([d["xyz1"] for d in data])
     xyz2 = np.array([d["xyz2"] for d in data])
@@ -273,6 +312,8 @@ def load_macadam1974(datasets_dir: str):
     """
     table1_path = os.path.join(datasets_dir, "macadam1974", "table1.yaml")
     table2_path = os.path.join(datasets_dir, "macadam1974", "table2.yaml")
+    if not (os.path.exists(table1_path) and os.path.exists(table2_path)):
+        return None, None, None, None  # caller prints a "[skipped]" note
 
     # Parse tile colorimetry (xyY, D65, 10° observer)
     tiles = {}
@@ -317,7 +358,8 @@ def load_macadam1974(datasets_dir: str):
 
 def load_human_feedback(datasets_dir: str):
     """3552 observer judgements (71 observers, sRGB hex pairs)."""
-    path = os.path.join(datasets_dir, "human_feedback.json")
+    path = _require_file(os.path.join(datasets_dir, "human_feedback.json"),
+                         "Human-feedback judgements (human_feedback.json)")
     data = json.load(open(path))
     judgements = data["judgements"]
 
@@ -376,6 +418,8 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
 
     results = {}
 
+    from .bootstrap import stress_ci
+
     # Common baseline set (applied per-dataset with appropriate white)
     def run_baselines(xyz1, xyz2, white_scalar, dv, is_d65=True):
         """Run all baselines. white_scalar: single white point for CIELab/CIEDE2000."""
@@ -390,8 +434,9 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
             print(f"  {name}...", end=" ", flush=True)
             de = fn()
             s = stress(de, dv)
+            lo, hi = stress_ci(de, dv)
             scores[name] = round(s, 2)
-            print(f"STRESS = {s:.2f}")
+            print(f"STRESS = {s:.2f}  (CI95 {lo:.1f}–{hi:.1f})")
         return scores
 
     # ── COMBVD (3813 pairs, multi-illuminant) ──────────────────────────────
@@ -426,8 +471,9 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
         print(f"  {name}...", end=" ", flush=True)
         de = fn()
         s = stress(de, dv)
+        lo, hi = stress_ci(de, dv)
         scores_combvd[name] = round(s, 2)
-        print(f"STRESS = {s:.2f}")
+        print(f"STRESS = {s:.2f}  (CI95 {lo:.1f}–{hi:.1f})")
 
     results["COMBVD"] = scores_combvd
 
@@ -484,15 +530,20 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
             print(f"  {name}...", end=" ", flush=True)
             de = fn()
             s = stress(de, dv_mac)
+            lo, hi = stress_ci(de, dv_mac)
             scores_mac[name] = round(s, 2)
-            print(f"STRESS = {s:.2f}")
+            print(f"STRESS = {s:.2f}  (CI95 {lo:.1f}–{hi:.1f})")
         results["MacAdam1974"] = scores_mac
         print(f"  ({len(dv_mac)} pairs)")
     else:
         print("  [skipped — macadam1974/ not found]")
 
-    # ── Human Feedback (3552 judgements) ──────────────────────────────────
-    print("\n[3/3] Human Feedback (3552 judgements, 71 observers, sRGB)")
+    # ── Human Feedback (3552 judgements) — RANK-ONLY ──────────────────────
+    # Project decision (2026-06 audit): HumanFB's DV is a 5-level ordinal
+    # category scale ({5,25,50,75,90}), so STRESS magnitudes are an artefact
+    # of the arbitrary category→number mapping. Only the ORDERING is trusted:
+    # scored with Spearman ρ and EXCLUDED from the pooled avg-STRESS ranking.
+    print("\n[3/3] Human Feedback (3552 judgements, 71 observers, sRGB) — RANK-ONLY (Spearman ρ)")
     hxyz1, hxyz2, hdv = load_human_feedback(datasets_dir)
 
     hscores = {}
@@ -509,11 +560,11 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
     ]:
         print(f"  {name}...", end=" ", flush=True)
         de = fn()
-        s = stress(de, hdv)
-        hscores[name] = round(s, 2)
-        print(f"STRESS = {s:.2f}")
+        rho = spearman_rho(de, hdv)
+        hscores[name] = round(rho, 4)
+        print(f"Spearman ρ = {rho:.4f}")
 
-    results["HumanFeedback"] = hscores
+    results["HumanFeedback_rank_only"] = hscores
 
     # ── Summary ────────────────────────────────────────────────────────────
     _print_summary(results)
@@ -521,8 +572,11 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
 
 
 def _print_summary(results: dict):
-    # Only show main datasets (not sub-dataset breakdown)
-    main_keys = [k for k in results.keys() if not k.endswith("_subsets")]
+    # Only show main datasets (not sub-dataset breakdown, not rank-only sets —
+    # those are ordinal-DV datasets whose STRESS would be an artefact; they get
+    # their own Spearman table below and never enter the avg-STRESS ranking).
+    main_keys = [k for k in results.keys()
+                 if not k.endswith("_subsets") and not k.endswith("_rank_only")]
     if not main_keys:
         return
 
@@ -562,3 +616,14 @@ def _print_summary(results: dict):
         marker = " ← BEST" if rank == 1 else ""
         print(f"    {rank}. {name:<18} avg={v:.2f}{marker}")
     print()
+
+    # Rank-only datasets: separate Spearman ρ table, never pooled with STRESS
+    rank_keys = [k for k in results.keys() if k.endswith("_rank_only")]
+    for d in rank_keys:
+        label = d[:-len("_rank_only")]
+        print(f"  {label} — RANK-ONLY (Spearman ρ, higher = better; ordinal DV, not in avg):")
+        ordered = sorted(results[d].items(), key=lambda kv: -kv[1])
+        for rank, (name, v) in enumerate(ordered, 1):
+            marker = " ← BEST" if rank == 1 else ""
+            print(f"    {rank}. {name:<18} ρ={v:.4f}{marker}")
+        print()

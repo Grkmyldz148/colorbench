@@ -10,6 +10,7 @@ Usage:
 Output: terminal summary + JSON report in results/
 """
 
+import json
 import sys
 import os
 import time
@@ -50,6 +51,8 @@ from core.cs import (
     GenSpaceAdapter, GenSpaceEnriched, NakaRushtonEnriched,
     GenSpaceBlueFix, NonlinearM1,
 )
+# clean-helmlab-mistral family (Mistral Vibe):
+from core.cs import CleanMetricMistral, TriOppMistral
 
 # ── Pairs + metrics ──────────────────────────────────────────────────────────
 from core.pairs import generate_all_pairs
@@ -191,6 +194,11 @@ def build_space(space_arg, json_path, device, canonical=False, dtype=torch.float
         return CAM16UCSCanonical(device) if canonical else CAM16UCS(device)
     elif s == "din99d":
         return DIN99dCanonical(device) if canonical else DIN99d(device)
+    # clean-helmlab-mistral spaces
+    elif s == "cleanmetric" or s == "clean_metric" or s == "cleanmetricmistral":
+        return CleanMetricMistral(device=device, dtype=dtype)
+    elif s == "triopp" or s == "triopp_mistral" or s == "trioppmistral":
+        return TriOppMistral(device=device, dtype=dtype)
     else:
         print(f"Unknown space: {space_arg}", file=sys.stderr)
         sys.exit(1)
@@ -515,8 +523,25 @@ def main():
     os.makedirs(args.out, exist_ok=True)
 
     reports = []
+    spaces_by_name = {}
     for space_name in args.space:
         space = build_space(space_name, args.json, device, canonical=args.canonical, dtype=dtype)
+        spaces_by_name[space.name] = space
+
+        # Fit-data declaration (three-way holdout): --json spaces may declare
+        # "trained_on": [dataset, ...] in their params file; judges built on
+        # those datasets are then flagged in-sample for this space.
+        if args.json and not hasattr(space, "trained_on"):
+            try:
+                with open(args.json) as f:
+                    decl = json.load(f).get("trained_on")
+                if decl:
+                    space.trained_on = decl
+            except Exception:
+                pass
+        if args.json and not getattr(space, "trained_on", None):
+            print(f"  NOT: '{space.name}' fit-verisi beyanı yok (params JSON'a "
+                  f"\"trained_on\": [...] ekleyin) — kontaminasyon kontrolü yapılamıyor.")
 
         # Delete old JSON before test
         safe_name = space.name.replace("/", "_").replace(" ", "_")
@@ -527,6 +552,7 @@ def main():
         t_start = time.time()
         report = run_test(space, device, device_name)
         report["total_time"] = time.time() - t_start
+        report["trained_on"] = list(getattr(space, "trained_on", []) or [])
         save_json(report, json_path)
         print(f"\n  JSON saved: {json_path}")
 
@@ -542,6 +568,52 @@ def main():
         results_by_space = {r["space"]: r for r in reports}
         comp = compare_spaces(results_by_space)
         print_comp_summary(comp)
+
+        from core.contamination import summarize as contamination_summary
+        cs = contamination_summary(comp)
+        if cs:
+            print("\n" + cs)
+
+        # ── Fairness-corrected verdict — THE HEADLINE ────────────────────
+        # The raw W-L-T above is fully auditable but over-weights gamut
+        # (31 metrics = ~10 tests × 3 gamuts) and includes CIELab-ceiling
+        # metrics that penalize hue-correcting spaces. Never quote the raw
+        # count as the verdict; quote this block.
+        from core.judge_provenance import tiered_winhist, format_tiered_verdict
+        from core.fair_verdict import fair_winhist
+
+        names = [r["space"] for r in reports]
+        print("\n" + "=" * 60)
+        print("  ADİL VERDİCT (headline) — ham W-L-T yukarıda, referans için")
+        print("=" * 60)
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                a, b = names[i], names[j]
+                print()
+                print(format_tiered_verdict(tiered_winhist(comp.tests, a, b), a, b))
+                fw = fair_winhist(comp, a, b)
+                print(f"  AĞIRLIKLI (gamut×1/3, CIELab-ref×0): "
+                      f"{a} {fw['a']} – {fw['b']} {b}  (tie {fw['tie']})")
+
+        # Human-data panel (best-of-breed pool) for pairwise runs; skipped
+        # gracefully when the color-perception-datasets pool isn't available.
+        if len(reports) == 2:
+            try:
+                from core import human_pool as hp
+                print()
+                print(hp.compare_on_pool(spaces_by_name[names[0]], spaces_by_name[names[1]],
+                                         names[0], names[1], validated_only=True))
+            except Exception as e:
+                print(f"\n  (insan-verisi paneli atlandı: {repr(e)[:100]})")
+
+        # Karne: property × space matrix — the benchmark's primary output
+        # (no single overall score, by design: no space is best at everything)
+        try:
+            from core.scorecard import scorecard as make_scorecard
+            print()
+            print(make_scorecard({n: spaces_by_name[n] for n in names}))
+        except Exception as e:
+            print(f"\n  (karne atlandı: {repr(e)[:100]})")
 
         html_path = os.path.join(args.out, "comparison.html")
         generate_html(comp, html_path)

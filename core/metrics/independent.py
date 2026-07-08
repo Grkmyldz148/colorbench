@@ -92,6 +92,8 @@ def measure_hung_berns(space, device=None) -> dict:
         "n_hues": len(all_mad),
         "n_samples": total_samples,
         "per_hue": per_hue,
+        # per-locus items for the paired-bootstrap tie decision
+        "_bootstrap": {"mean_mad_deg": {"items": all_mad, "stat": "mean"}},
     }
 
 
@@ -126,6 +128,8 @@ def measure_ebner_fairchild(space, device=None) -> dict:
         "n_hues": len(all_mad),
         "n_samples": total_samples,
         "per_hue": per_hue,
+        # per-locus items for the paired-bootstrap tie decision
+        "_bootstrap": {"mean_mad_deg": {"items": all_mad, "stat": "mean"}},
     }
 
 
@@ -211,4 +215,9 @@ def measure_pointer_gamut(space, device=None) -> dict:
         "hue_uniformity_cv": hue_cv,
         "n_points": len(valid),
         "n_l_levels": len(l_levels),
+        # per-L-level items for the paired-bootstrap tie decision
+        "_bootstrap": {
+            "chroma_cv": {"items": chroma_cvs, "stat": "mean"},
+            "boundary_smoothness": {"items": smoothness_scores, "stat": "mean"},
+        },
     }

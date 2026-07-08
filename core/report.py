@@ -64,6 +64,12 @@ def compile_report(space_name, device_name, results):
         report["gradients"] = {
             "overall": results["gradients"]["overall"],
             "by_category": results["gradients"]["by_category"],
+            # per-item payload for the paired-bootstrap tie decision —
+            # must survive into the saved report so comparisons from JSON
+            # decide ties the same way as live runs
+            "_bootstrap": results["gradients"].get("_bootstrap", {}),
+            # per-ruler aggregates for the ruler-sensitivity check
+            "_ruler_sensitivity": results["gradients"].get("_ruler_sensitivity", {}),
         }
         report["_pairs_detail"] = results["gradients"]["pairs"]
 
@@ -76,20 +82,26 @@ def compile_report(space_name, device_name, results):
 
     # Methodology notes — fairness caveats for anyone reading the JSON
     report["_methodology"] = {
-        "version": "colorbench v1.0",
-        "total_metrics": 54,
+        "version": "colorbench v1.1",
+        "total_metrics": 94,
         "total_gradient_pairs": 3038,
         "gamuts_tested": ["sRGB", "Display P3", "Rec.2020"],
-        "perceptual_metric": "CIEDE2000 (simplified, no RT rotation term)",
+        "perceptual_metric": "spacing metrics: 3-uniform-space consensus ruler "
+                             "(Perceptia-Spacing / CAM16-UCS / Jzazbz, core/rulers.py); "
+                             "difference metrics: CIEDE2000 (full Sharma 2005, incl. RT term)",
+        "verdict_layers": "raw 94-metric W-L-T is auditable but NOT the verdict; "
+                          "the headline is the tiered/fair verdict "
+                          "(core/judge_provenance.py + core/fair_verdict.py: gamut 1/3 weight, "
+                          "CIELab-reference and heuristic-proxy metrics excluded)",
         "fairness_notes": [
             {
                 "severity": "medium",
-                "issue": "CIEDE2000 structural bias",
-                "detail": "Gradient CV, multi-stop CV, eased animation CV, data viz dE, "
-                          "and banding tests all use CIEDE2000 as the perceptual distance metric. "
-                          "CIEDE2000 is built on CIE Lab coordinates, which gives CIE Lab and "
-                          "CIE Lab-adjacent spaces (like OKLab) a structural advantage on these tests. "
-                          "No independent perceptual ground truth exists as an alternative.",
+                "issue": "Difference-ruler (CIEDE2000) structural bias",
+                "detail": "Difference/distinguishability tests (3-color, data viz dE, CVD, "
+                          "photo gamut map) use CIEDE2000, which is built on CIE Lab coordinates "
+                          "and gives Lab-adjacent spaces a structural advantage there. Spacing "
+                          "tests (gradient/banding/animation CV) were moved OFF CIEDE2000 to the "
+                          "3-uniform-space consensus ruler for exactly this reason.",
             },
             {
                 "severity": "medium",
@@ -97,15 +109,18 @@ def compile_report(space_name, device_name, results):
                 "detail": "Munsell Value scale uniformity test uses Y values from ASTM D1535. "
                           "CIE Lab was specifically designed to linearize Munsell Value, so it "
                           "will always score well on this test. A high score here means agreement "
-                          "with CIE Lab's lightness model, not necessarily perceptual accuracy.",
+                          "with CIE Lab's lightness model, not necessarily perceptual accuracy. "
+                          "The judge is also a CV in the candidate's own coordinates (inherent "
+                          "to spacing tests) — human-data input, own-coordinate judge.",
             },
             {
-                "severity": "medium",
-                "issue": "MacAdam ellipse data is CIE Lab-era",
-                "detail": "MacAdam 1942 ellipse centers are defined in CIE xy chromaticity. "
-                          "The isotropy test measures local uniformity at these specific points. "
-                          "A space optimized for different chromaticity regions may score poorly "
-                          "here despite being perceptually superior in practice.",
+                "severity": "low",
+                "issue": "MacAdam isotropy fixed 2026-07 to real ellipse geometry",
+                "detail": "The test now samples each real 1942 JND ellipse perimeter (a/b/theta, "
+                          "Bradford C→D65) so ratio 1.0 genuinely means matching human "
+                          "discrimination thresholds. The previous fixed-xy-circle version "
+                          "rewarded IGNORING MacAdam anisotropy and its scores are not "
+                          "comparable with current ones.",
             },
             {
                 "severity": "low",

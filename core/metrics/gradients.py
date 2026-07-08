@@ -25,9 +25,10 @@ from ._common import (
     xyz_to_cielab,
 )
 # Bridge to existing CIEDE2000 implementation (gpu_de.py is shared infrastructure)
-from ..rulers import get_ruler as _get_ruler
+from ..rulers import get_ruler as _get_ruler, spacing_members as _spacing_members
 
-_step_ruler = _get_ruler("spacing")  # uniformity -> spacing ruler (Perceptia-Spacing); notebook 2026-05-30
+_step_ruler = _get_ruler("spacing")  # uniformity -> spacing consensus ruler; notebook 2026-05-30
+_RULER_MEMBERS = _spacing_members()  # individual rulers for the sensitivity check
 
 CHUNK = 5000
 PI = 3.141592653589793
@@ -57,13 +58,26 @@ def _gradient_chunk(space, pair_xyz_chunk, S, ms, msi, d65):
     xyz_q = srgb_to_linear(s8) @ ms.T
     cielab = xyz_to_cielab(xyz_q.clamp(min=1e-10), d65).reshape(nc, S, 3)
 
-    # CV via consecutive ΔE2000
+    # CV via consecutive spacing-ruler ΔE
     cl1, cl2 = cielab[:, :-1], cielab[:, 1:]
     de = _step_ruler(cl1, cl2)
+    de = de.reshape(nc, S - 1)
     md = de.mean(dim=1)
     sd = de.std(dim=1)
     ok = md > 0.001
     cvs = torch.where(ok, sd / md, torch.zeros_like(md))
+
+    # Same CV under EACH consensus member separately (ruler-sensitivity check)
+    ruler_cvs = {}
+    flat1 = cl1.reshape(-1, 3)
+    flat2 = cl2.reshape(-1, 3)
+    for rkey, rfn in _RULER_MEMBERS.items():
+        de_r = torch.as_tensor(rfn(flat1, flat2), device=de.device,
+                               dtype=de.dtype).reshape(nc, S - 1)
+        md_r = de_r.mean(dim=1)
+        sd_r = de_r.std(dim=1)
+        ruler_cvs[rkey] = torch.where(md_r > 0.001, sd_r / md_r,
+                                      torch.zeros_like(md_r))
 
     # Hue drift in CIE Lab (degrees, only where both endpoints chromatic)
     C_star = (cielab[..., 1] ** 2 + cielab[..., 2] ** 2).sqrt()
@@ -80,7 +94,7 @@ def _gradient_chunk(space, pair_xyz_chunk, S, ms, msi, d65):
     dupes = (s8_int[:, 1:] == s8_int[:, :-1]).all(dim=2)
     banding = dupes.sum(dim=1).float()
 
-    return cvs, drift_max, is_crossing, banding
+    return cvs, drift_max, is_crossing, banding, ruler_cvs
 
 
 def _category_stats(cvs, drift_max, banding, pair_labels, device):
@@ -129,20 +143,31 @@ def _overall_stats(cvs, drift_max, is_crossing, banding, N):
     return out
 
 
-def _subset_cvs(cvs, lab1_all, lab2_all):
-    """CV averages over standard subsets (bright/dark/high_chroma/etc.)."""
-    L1, L2 = lab1_all[:, 0], lab2_all[:, 0]
-    C1 = (lab1_all[:, 1] ** 2 + lab1_all[:, 2] ** 2).sqrt()
-    C2 = (lab2_all[:, 1] ** 2 + lab2_all[:, 2] ** 2).sqrt()
-    subsets = {
-        "bright": (L1 > 0.6) & (L2 > 0.6),
-        "dark": (L1 < 0.4) & (L2 < 0.4),
-        "high_chroma": (C1 > 0.15) & (C2 > 0.15),
-        "cross_lightness": (L1 - L2).abs() > 0.5,
-        "near_achromatic": (C1 < 0.05) | (C2 < 0.05),
+def _subset_masks(ref_lab1, ref_lab2):
+    """Standard subset masks (bright/dark/high_chroma/etc.) in FIXED CIE Lab
+    (D65), NOT the candidate's own coords: own-coordinate thresholds select a
+    different pair population per space (with the old `L1 > 0.6` an 0-100-L
+    space had nearly every pair counted as 'bright'), so subset CVs compared
+    non-identical populations. CIE Lab here is only the bucketing frame —
+    identical for every candidate; the CV itself is still measured by the
+    spacing ruler.
+    """
+    L1, L2 = ref_lab1[:, 0], ref_lab2[:, 0]
+    C1 = (ref_lab1[:, 1] ** 2 + ref_lab1[:, 2] ** 2).sqrt()
+    C2 = (ref_lab2[:, 1] ** 2 + ref_lab2[:, 2] ** 2).sqrt()
+    return {
+        "bright": (L1 > 60.0) & (L2 > 60.0),
+        "dark": (L1 < 40.0) & (L2 < 40.0),
+        "high_chroma": (C1 > 50.0) & (C2 > 50.0),
+        "cross_lightness": (L1 - L2).abs() > 50.0,
+        "near_achromatic": (C1 < 10.0) | (C2 < 10.0),
     }
+
+
+def _subset_cvs(cvs, subset_masks):
+    """CV averages over the standard subsets (see _subset_masks)."""
     out = {}
-    for name, mask in subsets.items():
+    for name, mask in subset_masks.items():
         sub = cvs[mask]
         valid = sub[sub > 0]
         out[f"cv_{name}"] = valid.mean().item() if valid.numel() > 0 else 0
@@ -168,20 +193,24 @@ def measure_gradients(space, pairs_xyz, pair_labels, device=None, n_steps=26) ->
     N, S = pairs_xyz.shape[0], n_steps
 
     all_cvs, all_drift, all_cross, all_band = [], [], [], []
+    all_ruler = {}
     for cs in range(0, N, CHUNK):
         ce = min(cs + CHUNK, N)
-        cvs, drift_max, is_crossing, banding = _gradient_chunk(
+        cvs, drift_max, is_crossing, banding, ruler_cvs = _gradient_chunk(
             space, pairs_xyz[cs:ce], S, ms, msi, d65
         )
         all_cvs.append(cvs)
         all_drift.append(drift_max)
         all_cross.append(is_crossing)
         all_band.append(banding)
+        for rkey, rc in ruler_cvs.items():
+            all_ruler.setdefault(rkey, []).append(rc)
 
     cvs = torch.cat(all_cvs)
     drift_max = torch.cat(all_drift)
     is_crossing = torch.cat(all_cross)
     banding = torch.cat(all_band)
+    ruler_cvs = {k: torch.cat(v) for k, v in all_ruler.items()}
 
     # Per-pair detail records (for JSON output)
     pair_results = []
@@ -200,16 +229,49 @@ def measure_gradients(space, pairs_xyz, pair_labels, device=None, n_steps=26) ->
             "duplicate_steps": int(band_l[i]),
         })
 
-    # Subset CVs use the test space's own Lab to filter pairs
+    # Subset bucketing in FIXED CIE Lab (D65) — identical pair populations
+    # for every candidate space (see _subset_cvs docstring)
     pairs_for_subset = pairs_xyz.to(device=space.device, dtype=space.dtype)
-    lab1_all = space.forward(pairs_for_subset[:, 0])
-    lab2_all = space.forward(pairs_for_subset[:, 1])
+    ref_lab1 = xyz_to_cielab(pairs_for_subset[:, 0].clamp(min=1e-10), d65)
+    ref_lab2 = xyz_to_cielab(pairs_for_subset[:, 1].clamp(min=1e-10), d65)
 
     overall = _overall_stats(cvs, drift_max, is_crossing, banding, N)
-    overall.update(_subset_cvs(cvs, lab1_all, lab2_all))
+    subset_masks = _subset_masks(ref_lab1, ref_lab2)
+    overall.update(_subset_cvs(cvs, subset_masks))
+
+    # Per-item arrays for the paired-bootstrap tie decision (core/bootstrap.py).
+    # Items are shared across spaces (same generated pairs), so resampling the
+    # same indices for two spaces gives a valid paired difference CI.
+    cvs_list = cvs.tolist()
+    boot = {
+        "overall.cv_mean": {"items": cvs_list, "stat": "mean_pos"},
+        "overall.cv_p95": {"items": cvs_list, "stat": "p95_pos"},
+        "overall.banding_mean": {"items": banding.tolist(), "stat": "mean"},
+    }
+    for sname, mask in subset_masks.items():
+        boot[f"overall.cv_{sname}"] = {
+            "items": cvs[mask].tolist(), "stat": "mean_pos"}
+
+    # Same aggregates under each consensus-member ruler — the sensitivity
+    # check downstream flags any verdict that flips with the ruler choice.
+    def _mean_pos(t):
+        v = t[t > 0]
+        return v.mean().item() if v.numel() else 0.0
+
+    ruler_sens = {}
+    for rkey, rc in ruler_cvs.items():
+        ruler_sens.setdefault("overall.cv_mean", {})[rkey] = _mean_pos(rc)
+        vpos = rc[rc > 0]
+        ruler_sens.setdefault("overall.cv_p95", {})[rkey] = (
+            vpos.quantile(0.95).item() if vpos.numel() >= 2 else 0.0)
+        for sname, mask in subset_masks.items():
+            ruler_sens.setdefault(f"overall.cv_{sname}", {})[rkey] = \
+                _mean_pos(rc[mask])
 
     return {
         "overall": overall,
         "by_category": _category_stats(cvs, drift_max, banding, pair_labels, dev),
         "pairs": pair_results,
+        "_bootstrap": boot,
+        "_ruler_sensitivity": ruler_sens,
     }

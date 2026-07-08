@@ -12,7 +12,7 @@ ship documented fairness notes.
 | Mode | Question | What it scores | Engine |
 |------|----------|----------------|--------|
 | **`compare`** (gradient / generation) | "Is this space good for *generating* color?" | 94 metrics across sRGB / P3 / Rec.2020 — gamut geometry & cusps, gradient/banding quality, palette uniformity, hue stability, round-trip precision | PyTorch (`core/cs/`, `core/metrics/`) |
-| **`metric`** (STRESS / difference) | "Is this space good for *predicting color difference*?" | STRESS on human pair datasets (COMBVD 3813, MacAdam 1974 128, Human-Feedback 3552) | NumPy (`core/metric_eval.py`), CAM16-UCS/Jzazbz via **colour-science** |
+| **`metric`** (STRESS / difference) | "Is this space good for *predicting color difference*?" | STRESS on human pair datasets (COMBVD 3813, MacAdam 1974 128) + Human-Feedback 3552 as **rank-only** (Spearman ρ — its 5-level ordinal DV makes STRESS an artefact; excluded from the pooled avg) | NumPy (`core/metric_eval.py`), CAM16-UCS/Jzazbz via **colour-science** |
 
 ## Quick start
 
@@ -26,6 +26,19 @@ python run.py oklab genspace --json path/to/params.json
 
 # metric mode — STRESS (perceptual-difference prediction)
 python run.py metric --json path/to/metricspace.json
+```
+
+Or from Python — **any** color space enters with two callables:
+
+```python
+import colorbench as cb
+
+space = cb.wrap(fwd, inv, name="myspace",     # XYZ→coords, coords→XYZ (torch N×3)
+                trained_on=["munsell"])       # fit-data declaration (holdout guard)
+profile = cb.evaluate(space)                  # 94 metrics vs cached baselines
+print(profile.verdict())                      # tiered + fair verdict
+print(profile.scorecard())                    # property × space karne
+profile.html("report.html")
 ```
 
 Output: terminal summary + JSON reports + an HTML comparison, all written to
@@ -63,6 +76,39 @@ audited and corrected, not assumed. Full audit:
    of three uniform spaces {Perceptia-Spacing, CAM16-UCS, Jzazbz}, removing the lever.
 3. **11 metrics judged hue against CIELab as truth** (penalizing hue-correcting spaces).
    `fair_verdict.py` drops them; hue is instead judged by real human data.
+4. **MacAdam isotropy measured the wrong thing** (2026-07): it perturbed centers by a
+   fixed *xy circle* and rewarded ratio→1 — i.e. rewarded *ignoring* MacAdam anisotropy.
+   Now it samples each real 1942 JND ellipse perimeter (a/b/θ, Bradford C→D65), so
+   ratio 1.0 genuinely means matching human thresholds.
+5. **Gradient subset CVs bucketed pairs in each space's own coordinates** (2026-07) —
+   different spaces were scored on different pair populations. Bucketing is now in
+   fixed CIE Lab (D65): identical populations for every candidate.
+6. **NaN/inf scores could corrupt the verdict** (2026-07): a space that failed to
+   compute a metric could cancel the winner or count as a tie, order-dependently.
+   Non-finite scores now deterministically lose to any finite opponent.
+7. **HumanFB scored with STRESS despite its ordinal 5-level DV** (2026-07): now
+   rank-only (Spearman ρ), separated from every pooled/headline number.
+
+**Methodology v2 (2026-07-08) — statistical rigor layer:**
+- **Statistical ties.** For metrics with per-item structure (gradient pairs,
+  ellipses, hue loci), ties are decided by a **paired bootstrap**: same resample
+  indices for both spaces, tie iff the 95% CI of the aggregate difference
+  contains 0 (`core/bootstrap.py`, fixed seed — deterministic). The arbitrary
+  1% threshold survives only for metrics without item structure, and every run
+  reports which rule decided how many metrics. STRESS scores print with CI95.
+- **Ruler-sensitivity flag.** Spacing-ruler metrics are additionally computed
+  under EACH consensus member (Perceptia-Spacing / CAM16-UCS / Jzazbz); a
+  verdict that flips with the ruler is flagged `SENSITIVE` — a property of the
+  ruler, not the space.
+- **Contamination guard.** Candidates declare fit data (`"trained_on"` in the
+  params JSON / `cb.wrap(..., trained_on=[...])`). Judges built on a declared
+  dataset are in-sample for that space: it cannot win them, head-to-head pairs
+  are skipped, and the report prints the contamination summary. This is the
+  three-way holdout rule (ruler-fit / candidate-fit / test disjoint) enforced
+  by machine.
+- **Scorecard output.** The primary result is the property × space karne with
+  per-property winners — deliberately **no overall score**, because no space is
+  best at everything (the project's central finding).
 
 ## The fairness / verdict layer (`core/`)
 
@@ -70,8 +116,8 @@ These modules turn a raw comparison into a verdict you can trust:
 
 | Module | Role |
 |--------|------|
-| `judge_provenance.py` | Tags each of the 94 metrics by **who judges it** — human-psychophysical / structural / human-fit-ruler / CIELab-reference — and reports W-L-T split by tier (ceiling-bound CIELab-reference metrics flagged, never in the headline). |
-| `human_pool.py` | **Best-of-breed human panel.** Grounds each property in the curated [`color-perception-datasets`](https://github.com/Grkmyldz148/color-perception-datasets) pool (43 datasets): real JND ellipses (MacAdam 1942, Luo-Rigg, Koenderink 2026 3D), constant-hue loci (Hung-Berns, Ebner-Fairchild, Munsell), H-K & CAT. 6 schema-aware judges. |
+| `judge_provenance.py` | Tags each of the 94 metrics by **who judges it** — human-psychophysical / structural / human-fit-ruler / CIELab-reference / heuristic-proxy — and reports W-L-T split by tier (ceiling-bound and arbitrary-target tiers flagged, never in the headline). |
+| `human_pool.py` | **Best-of-breed human panel.** Grounds each property in the curated [`color-perception-datasets`](https://github.com/Grkmyldz148/color-perception-datasets) pool — 20 datasets wired as of 2026-07: JND ellipses (MacAdam 1942, Luo-Rigg, Alder, Hong 2025), 3D ellipsoids (Koenderink 2026, Brown 1957, Brown-MacAdam 1949, Wyszecki-Fielder 1971), Lab-ellipsoids (Huang 2012), tolerance vectors (RIT-DuPont/Berns 1991), constant-hue loci (Hung-Berns, Ebner-Fairchild, Munsell), H-K (3 sets) & CAT. 10 schema-aware judges, each validated (gray-ramp + degenerate-space direction check) before entering the headline tier. |
 | `fair_verdict.py` | Weighted W-L-T applying the 3 fixes above + folds in the human panel. `fair_verdict_full(space_a, space_b, comparison)`. |
 | `rulers.py` | Modular human-fit rulers (difference / threshold / spacing-consensus) — each property measured with the right instrument. |
 
@@ -107,7 +153,12 @@ colorbench/
 ## Reading a result
 
 Never read the raw 94-metric win-count as the verdict — it over-weights gamut and
-includes CIELab-ceiling metrics. Instead:
+includes CIELab-ceiling metrics. Since 2026-07 `run.py` prints the corrected verdict
+automatically after every multi-space comparison: the tiered W-L-T (headline = tiers
+1-3), the weighted fair verdict (gamut ×1/3, ceiling-bound/proxy ×0), and — for
+2-space runs with the dataset pool available — the real human-data panel.
+
+Programmatic access:
 
 ```python
 from core.comparison import compare_spaces

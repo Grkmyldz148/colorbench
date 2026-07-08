@@ -25,9 +25,25 @@ import re
 import numpy as np
 
 # ── pool location ─────────────────────────────────────────────────────────────
-POOL_DIR = os.environ.get(
-    "COLOR_PERCEPTION_POOL",
-    "/Volumes/harici_ssd/color-perception-datasets/datasets")
+# Resolution order: COLOR_PERCEPTION_POOL env var, then the sibling checkout
+# ../../color-perception-datasets/datasets relative to this repo. No absolute
+# machine-specific fallback — pool_available()/pool_hint() give a clear message
+# instead of a silent empty panel.
+_SIBLING_POOL = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
+    "color-perception-datasets", "datasets"))
+POOL_DIR = os.environ.get("COLOR_PERCEPTION_POOL", _SIBLING_POOL)
+
+
+def pool_available() -> bool:
+    return os.path.isdir(POOL_DIR)
+
+
+def pool_hint() -> str:
+    return (f"color-perception-datasets pool not found at '{POOL_DIR}'. "
+            f"Clone https://github.com/Grkmyldz148/color-perception-datasets "
+            f"next to the color-space repo, or set COLOR_PERCEPTION_POOL to "
+            f"its datasets/ directory.")
 
 
 def _ds_path(name, *parts):
@@ -121,15 +137,19 @@ def _space_forward(space, xyz):
     space (.forward) or a numpy-forward wrapper."""
     xyz = np.atleast_2d(np.asarray(xyz, dtype=np.float64))
     fwd = space.forward
+    # Try torch input first — works for every ColorBench ColorSpace (incl. the
+    # colour-science canonical wrappers, which call .detach() on their input).
     try:
         import torch
-        if hasattr(space, "dtype") and hasattr(space, "device"):
-            t = torch.as_tensor(xyz, dtype=getattr(space, "dtype", torch.float64),
-                                device=getattr(space, "device", None))
-            out = fwd(t)
+        t = torch.as_tensor(xyz, dtype=getattr(space, "dtype", torch.float64),
+                            device=getattr(space, "device", None))
+        out = fwd(t)
+        if hasattr(out, "detach"):
             return np.asarray(out.detach().cpu(), dtype=np.float64)
+        return np.asarray(out, dtype=np.float64)
     except Exception:
         pass
+    # Fall back to numpy-forward wrappers (e.g. the oklab_abney module functions).
     return np.asarray(fwd(xyz), dtype=np.float64)
 
 
@@ -161,7 +181,9 @@ def judge_pair_diff(space, name, adapt_d65=True):
         x1, x2 = cat_to_d65(x1, white), cat_to_d65(x2, white)
     l1, l2 = _space_forward(space, x1), _space_forward(space, x2)
     de = np.sqrt(((l1 - l2) ** 2).sum(-1))
-    return {"name": name, "n": len(dv), "stress": _stress(de, dv)}
+    from .metric_eval import spearman_rho
+    return {"name": name, "n": len(dv), "stress": _stress(de, dv),
+            "spearman_rho": spearman_rho(de, dv)}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -306,6 +328,243 @@ def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 3b — g-tensor 3D color-matching ellipsoids (Brown 1957 family)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_jnd_ellipsoid_g(space, name, n_dir=26, row_filter=None):
+    """3-D color-matching ellipsoids in (x, y, l = 0.2·log10 Y) coordinates —
+    the Brown 1957 / Brown-MacAdam 1949 / Wyszecki-Fielder 1971 schema family.
+
+    Each row gives the quadratic form g_ij of the matching ellipsoid:
+    Δc' G Δc = 1 with Δc = (Δx, Δy, Δl). Points on that surface are equally
+    (just-)discriminable, so a uniform space maps them to equal distance from
+    the center; CV of those distances = 3D discrimination anisotropy.
+
+    Notes on conventions (identical for every candidate → fair):
+      - g scale (×1e2 / ×1e4 storage) does NOT matter: CV is scale-invariant
+        per center, only the ellipsoid SHAPE enters.
+      - luminance: l = 0.2·log10(Y). The center is placed at relative
+        luminance 0.2 (a mid-gray assumption; these are aperture colors with
+        no documented white). Perturbations use Y_i/Y_0 ratios, which are
+        exact regardless of the absolute placement.
+      - aperture viewing → no chromatic adaptation applied.
+    """
+    rows = load_canonical(name)
+    cols = rows[0].keys()
+    gbase = next((c[3:] for c in cols if c.startswith("g11")), None)
+    if gbase is None or not {"x_0", "y_0"}.issubset(cols):
+        return {"name": name, "skipped": "not g-tensor ellipsoid schema",
+                "available": list(cols)}
+    if row_filter:
+        rows = [r for r in rows if row_filter(r)]
+
+    # Fibonacci sphere directions
+    i = np.arange(n_dir) + 0.5
+    phi = np.arccos(1 - 2 * i / n_dir)
+    gold = math.pi * (1 + 5 ** 0.5)
+    u = np.column_stack([np.cos(gold * i) * np.sin(phi),
+                         np.sin(gold * i) * np.sin(phi), np.cos(phi)])
+
+    Y_REL_CENTER = 0.2
+    cvs = []
+    for r in rows:
+        try:
+            g = {k: float(r[f"g{k}{gbase}"]) for k in
+                 ("11", "12", "22", "23", "33", "13")}
+            x0, y0 = float(r["x_0"]), float(r["y_0"])
+        except (KeyError, ValueError):
+            continue
+        G = np.array([[g["11"], g["12"], g["13"]],
+                      [g["12"], g["22"], g["23"]],
+                      [g["13"], g["23"], g["33"]]], dtype=np.float64)
+        try:
+            Lc = np.linalg.cholesky(G)
+        except np.linalg.LinAlgError:
+            continue
+        # boundary of {Δ' G Δ = 1}: Δ = L^{-T} u
+        delta = np.linalg.solve(Lc.T, u.T).T
+        dx, dy, dl = delta[:, 0], delta[:, 1], delta[:, 2]
+        xs = x0 + dx
+        ys = y0 + dy
+        yrel = Y_REL_CENTER * (10.0 ** (dl / 0.2))   # Y_i/Y_0 = 10^(Δl/0.2)
+        xs = np.concatenate([[x0], xs])
+        ys = np.concatenate([[y0], ys])
+        yrel = np.concatenate([[Y_REL_CENTER], yrel])
+        if np.any(ys < 1e-6):
+            continue
+        xyz = xyY_to_xyz(xs, ys, yrel)
+        lab = _space_forward(space, np.clip(xyz, 0, None))
+        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        if d.mean() > 0:
+            cvs.append(float(d.std() / d.mean()))
+    return {"name": name, "n_centers": len(cvs),
+            "mean_cv": float(np.mean(cvs)) if cvs else None}
+
+
+def judge_brown_1957(space, name="brown_1957_12obs_ellipsoids"):
+    # weighted = inverse-variance observer average (the better estimator)
+    return judge_jnd_ellipsoid_g(space, name,
+                                 row_filter=lambda r: r.get("averaging") == "weighted")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 3c — CIELAB-space discrimination ellipsoids (Huang 2012)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_lab_ellipsoid(space, name="huang_2012_cielab_ellipses", n_dir=26):
+    """Huang et al. 2012: threshold ellipsoids at 17 CIE centers, given as
+    semi-axes A (major, in a*b* plane at theta_deg), B = A/A_over_B, and
+    C_third_axis along ΔL*. Points on the ellipsoid are equally discriminable
+    → equal candidate-space distance from center; CV = anisotropy. D65/10°."""
+    rows = load_canonical(name)
+    cols = rows[0].keys()
+    need = {"L10_measured", "a10_measured", "b10_measured",
+            "A_semimajor", "A_over_B", "theta_deg", "C_third_axis"}
+    if not need.issubset(cols):
+        return {"name": name, "skipped": "not huang lab-ellipsoid schema",
+                "available": list(cols)}
+    white = _white_for("D65 10")
+
+    i = np.arange(n_dir) + 0.5
+    phi = np.arccos(1 - 2 * i / n_dir)
+    gold = math.pi * (1 + 5 ** 0.5)
+    u = np.column_stack([np.cos(gold * i) * np.sin(phi),
+                         np.sin(gold * i) * np.sin(phi), np.cos(phi)])
+
+    cvs = []
+    for r in rows:
+        try:
+            center = np.array([float(r["L10_measured"]), float(r["a10_measured"]),
+                               float(r["b10_measured"])])
+            A = float(r["A_semimajor"])
+            B = A / max(float(r["A_over_B"]), 1e-9)
+            C = float(r["C_third_axis"])
+            th = math.radians(float(r["theta_deg"]))
+        except (KeyError, ValueError):
+            continue
+        if min(A, B, C) <= 0:
+            continue
+        # (L, a, b) order: major/minor axes live in the a*b* plane
+        e1 = np.array([0.0, math.cos(th), math.sin(th)])
+        e2 = np.array([0.0, -math.sin(th), math.cos(th)])
+        e3 = np.array([1.0, 0.0, 0.0])
+        delta = (u[:, 0:1] * A * e1 + u[:, 1:2] * B * e2 + u[:, 2:3] * C * e3)
+        lab_pts = np.vstack([center, center + delta])
+        xyz = lab_to_xyz(lab_pts, white)
+        lab2 = _space_forward(space, np.clip(xyz, 0, None))
+        d = np.sqrt(((lab2[1:] - lab2[0]) ** 2).sum(-1))
+        if d.mean() > 0:
+            cvs.append(float(d.std() / d.mean()))
+    return {"name": name, "n_centers": len(cvs),
+            "mean_cv": float(np.mean(cvs)) if cvs else None}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 3d — suprathreshold tolerance vectors (RIT-DuPont, Berns 1991)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_tolerance_vectors(space, name="berns_1991_rit_dupont_tolerance_vectors",
+                            min_vectors=4):
+    """RIT-DuPont T50 tolerance vectors: for each color center, several unit
+    directions v with the distance T50 at which the difference is judged equal
+    to the 1.0 ΔE*ab anchor. All endpoints center + T50·v are thus equally
+    different from the center → equal candidate-space distance; CV per center
+    = suprathreshold tolerance anisotropy. D65."""
+    rows = load_canonical(name)
+    cols = rows[0].keys()
+    need = {"color_center", "T50", "L_star", "a_star", "b_star",
+            "delta_L", "delta_a", "delta_b"}
+    if not need.issubset(cols):
+        return {"name": name, "skipped": "not tolerance-vector schema",
+                "available": list(cols)}
+    white = _white_for("D65")
+    groups = {}
+    n_corrupt = 0
+    for r in rows:
+        try:
+            center = np.array([float(r["L_star"]), float(r["a_star"]),
+                               float(r["b_star"])])
+            v = np.array([float(r["delta_L"]), float(r["delta_a"]),
+                          float(r["delta_b"])])
+            t50 = float(r["T50"])
+        except (KeyError, ValueError):
+            continue
+        n = np.linalg.norm(v)
+        if n < 1e-9 or t50 <= 0:
+            continue
+        # 2026-07-08 dataset audit: 7/156 rows carry OCR column-shift damage
+        # (impossible L*, non-unit "eigenvectors" with norm ≈ 1.41). The
+        # direction vectors are unit by construction in the source table, so
+        # a non-unit norm or an out-of-range L* marks a corrupted row.
+        if not (0.0 <= center[0] <= 100.0) or abs(n - 1.0) > 0.05:
+            n_corrupt += 1
+            continue
+        groups.setdefault(r["color_center"], []).append(
+            (center, center + t50 * v))
+    cvs = []
+    for cname, pairs in groups.items():
+        if len(pairs) < min_vectors:
+            continue
+        center = pairs[0][0]
+        pts = np.vstack([center] + [ep for _, ep in pairs])
+        xyz = lab_to_xyz(pts, white)
+        lab2 = _space_forward(space, np.clip(xyz, 0, None))
+        d = np.sqrt(((lab2[1:] - lab2[0]) ** 2).sum(-1))
+        if d.mean() > 0:
+            cvs.append(float(d.std() / d.mean()))
+    return {"name": name, "n_centers": len(cvs),
+            "mean_cv": float(np.mean(cvs)) if cvs else None,
+            "n_corrupt_rows_skipped": n_corrupt}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 3e — Hong 2025 dense JND field (DIAGNOSTIC: display≈sRGB assumption)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
+    """Hong et al. 2025 Wishart-Process JND ellipse field. Coordinates are
+    DKL-derived 2DW units; mapped to display RGB via the dataset's calibration
+    matrix (raw/M_2DWToRGB). The display (DELL OLED) → XYZ calibration is NOT
+    in the canonical export, so device RGB is APPROXIMATED as sRGB — keep this
+    judge in the diagnostic tier (validated=False) until a real display
+    characterization is added. Rows are subsampled (stride) because Wishart
+    smoothing makes neighbors dependent (effective DOF ≈ 100/subject)."""
+    mpath = _ds_path(name, "raw", "M_2DWToRGB_DELL_02242025_copy.csv")
+    if not os.path.exists(mpath):
+        return {"name": name, "skipped": "no M_2DWToRGB calibration matrix"}
+    M = np.loadtxt(mpath, delimiter=",", dtype=np.float64)
+    if M.shape != (3, 3):
+        return {"name": name, "skipped": f"unexpected matrix shape {M.shape}"}
+    rows = load_canonical(name)
+    cols = rows[0].keys()
+    if not {"x_c", "y_c", "a", "b", "theta_deg"}.issubset(cols):
+        return {"name": name, "skipped": "not xy-ellipse schema"}
+    rows = rows[::max(1, int(stride))]
+    phis = np.linspace(0, 2 * math.pi, n_phi, endpoint=False)
+    cvs = []
+    for r in rows:
+        try:
+            xc, yc = float(r["x_c"]), float(r["y_c"])
+            a, b = float(r["a"]), float(r["b"])
+            th = math.radians(float(r["theta_deg"]))
+        except (KeyError, ValueError):
+            continue
+        ex = a * np.cos(phis); ey = b * np.sin(phis)
+        px = xc + ex * math.cos(th) - ey * math.sin(th)
+        py = yc + ex * math.sin(th) + ey * math.cos(th)
+        pts_2dw = np.vstack([[xc, yc], np.column_stack([px, py])])
+        # homogeneous 2DW → device RGB (≈ sRGB)
+        homog = np.column_stack([pts_2dw, np.ones(len(pts_2dw))])
+        rgb = homog @ M.T
+        if np.any(rgb < -0.05) or np.any(rgb > 1.05):
+            continue
+        xyz = _srgb_to_xyz(np.clip(rgb, 0, 1))
+        lab = _space_forward(space, xyz)
+        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        if d.mean() > 0:
+            cvs.append(float(d.std() / d.mean()))
+    return {"name": name, "n_centers": len(cvs),
+            "mean_cv": float(np.mean(cvs)) if cvs else None,
+            "note": "display RGB ≈ sRGB approximation — diagnostic only"}
+
+
+# ════════════════════════════════════════════════════════════════════════════
 #  JUDGE 5 — H-K brightness (mechanism diagnostic: does space-L boost with chroma?)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_hk(space, name="wyszecki_1967_osa_tiles", adapt_d65=True):
@@ -319,7 +578,7 @@ def judge_hk(space, name="wyszecki_1967_osa_tiles", adapt_d65=True):
     cf. perceptia H-K family). H-K-aware models score ρ>0."""
     rows = load_canonical(name)
     cols = rows[0].keys()
-    if not {"x", "y"}.issubset(cols):
+    if not ({"x", "y"}.issubset(cols) or {"x10", "y10"}.issubset(cols)):
         return {"name": name, "skipped": "no x,y", "available": list(cols)}
     if "Y_gray_over_Y_colored" in cols and "Y_colored" in cols:
         meas = np.array([float(r["Y_gray_over_Y_colored"]) for r in rows])  # >1 = brighter
@@ -334,7 +593,8 @@ def judge_hk(space, name="wyszecki_1967_osa_tiles", adapt_d65=True):
     else:
         return {"name": name, "skipped": "no H-K brightness column", "available": list(cols)}
     white = _white_for(meta(name)["illuminant"])
-    xy = np.array([[float(r["x"]), float(r["y"])] for r in rows])
+    xk, yk = ("x", "y") if "x" in cols else ("x10", "y10")  # sanders-wyszecki stores 10° coords
+    xy = np.array([[float(r[xk]), float(r[yk])] for r in rows])
     xyz_c = xyY_to_xyz(xy[:, 0], xy[:, 1], Yc)
     # gray at same luminance = white chromaticity at Y=Yc
     wx, wy = white[0] / white.sum(), white[1] / white.sum()
@@ -420,7 +680,10 @@ def _judge_constant_hue_xyY(space, name, rows, cols, hue_key, adapt_d65, c_floor
 REGISTRY = [
     # property        dataset                         judge                          key             validated
     ("difference",    "combvd",                       judge_pair_diff,               "stress",       True),
-    ("difference",    "helmlabfb",                    judge_pair_diff,               "stress",       True),
+    # helmlabfb: RANK-ONLY by project decision (2026-06 audit) — 5-level ordinal
+    # DV makes STRESS an artefact of the category→number mapping. Spearman ρ
+    # only; lives under its own property so it never enters the headline total.
+    ("difference_rank", "helmlabfb",                  judge_pair_diff,               "spearman_rho", True),
     ("difference",    "macadam1974",                  judge_pair_diff,               "stress",       True),
     ("hue",           "hung_berns",                   judge_constant_hue,            "mean_mad_deg", True),
     ("hue",           "ebner_fairchild",              judge_constant_hue,            "mean_mad_deg", True),
@@ -429,20 +692,32 @@ REGISTRY = [
     ("discrimination","luo_rigg_ellipses",            judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","alder1982",                    judge_jnd_ellipse,             "mean_cv",      True),
     ("3d_discrim",    "koenderink_2026_3d_metric_field", judge_jnd_ellipsoid_koenderink, "mean_cv", True),
+    # 2026-07-08 expansion — g-tensor 3D ellipsoid family + Lab ellipsoids +
+    # tolerance vectors (validated: gray-ramp sanity + known-direction check)
+    ("3d_discrim",    "brown_1957_12obs_ellipsoids",  judge_brown_1957,              "mean_cv",      True),
+    ("3d_discrim",    "wyszecki_fielder_1971_ellipsoids", judge_jnd_ellipsoid_g,     "mean_cv",      True),
+    ("3d_discrim",    "brown_macadam_1949_ellipsoids", judge_jnd_ellipsoid_g,        "mean_cv",      True),
+    ("tolerance",     "huang_2012_cielab_ellipses",   judge_lab_ellipsoid,           "mean_cv",      True),
+    ("tolerance",     "berns_1991_rit_dupont_tolerance_vectors", judge_tolerance_vectors, "mean_cv", True),
     # diagnostic / mechanism tier (geometric spaces are expected to score ~null)
+    ("discrimination","hong_2025_ellipsoids",         judge_hong_2dw,                "mean_cv",      False),  # display≈sRGB approx
     ("hk_mechanism",  "wyszecki_1967_osa_tiles",      judge_hk,                      "spearman_rho", False),
     ("hk_mechanism",  "zhang_2023_laser_display_brightness", judge_hk,               "spearman_rho", False),
+    ("hk_mechanism",  "sanders_wyszecki_1964_HK",     judge_hk,                      "spearman_rho", False),
     ("adaptation",    "corresponding_colours",        judge_corresponding,           "mean_de",      False),
 ]
 
 # property → which direction is "better" (all our validated keys: lower=better)
-_LOWER_BETTER = {"difference", "hue", "discrimination", "3d_discrim", "adaptation"}
+_LOWER_BETTER = {"difference", "hue", "discrimination", "3d_discrim",
+                 "tolerance", "adaptation"}
 
 
 def evaluate_space_on_pool(space, validated_only=False):
     """Run every applicable human-data judge on a space. Returns
     {property: {dataset: score}} plus a flat {dataset: score}. The verdict for a
     property is the set of real-human-data scores grounding it (best-of-breed)."""
+    if not pool_available():
+        raise FileNotFoundError(pool_hint())
     by_prop = {}
     flat = {}
     for prop, ds, fn, key, valid in REGISTRY:
@@ -467,16 +742,29 @@ def compare_on_pool(space_a, space_b, name_a="A", name_b="B", validated_only=Tru
     rb = evaluate_space_on_pool(space_b, validated_only)["by_property"]
     lines = [f"İNSAN-VERİSİ PANELİ — {name_a} vs {name_b} (best-of-breed, özellik bazlı)"]
     win_a = win_b = 0
-    for prop in ["difference", "hue", "discrimination", "3d_discrim",
-                 "hk_mechanism", "adaptation"]:
+    # fit-data contamination: a judge whose dataset appears in a space's
+    # trained_on declaration is in-sample for that space → out of TOPLAM
+    from .contamination import trained_on_of
+    fit_a = trained_on_of(space_a)
+    fit_b = trained_on_of(space_b)
+    for prop in ["difference", "difference_rank", "hue", "discrimination",
+                 "3d_discrim", "tolerance", "hk_mechanism", "adaptation"]:
         if prop not in ra:
             continue
         lower = prop in _LOWER_BETTER
-        lines.append(f"\n  [{prop}]  (düşük=iyi)" if lower else f"\n  [{prop}]")
+        if prop == "difference_rank":
+            lines.append(f"\n  [{prop}]  (Spearman ρ, yüksek=iyi; rank-only, TOPLAM'a dahil değil)")
+        else:
+            lines.append(f"\n  [{prop}]  (düşük=iyi)" if lower else f"\n  [{prop}]")
         for ds in ra[prop]:
             sa, sb = ra[prop][ds], rb[prop].get(ds)
             if sa is None or sb is None:
                 lines.append(f"    {ds:34} {name_a}={sa} {name_b}={sb}")
+                continue
+            if ds.lower() in fit_a or ds.lower() in fit_b:
+                who = name_a if ds.lower() in fit_a else name_b
+                lines.append(f"    {ds:34} {sa:8.3f} vs {sb:8.3f}  ⚠ IN-SAMPLE "
+                             f"({who} bu veriye fit) — TOPLAM dışı")
                 continue
             better = (sa < sb) if lower else (sa > sb)
             mark = name_a if better else name_b

@@ -177,6 +177,37 @@ def spacing_consensus(lab1, lab2):
     return out
 
 
+def _member_scale(key, fn):
+    """Gray-step normalization scale for one consensus member (cached)."""
+    if key not in _consensus_scales:
+        import torch
+        g1 = torch.tensor([_GRAY1[0]], dtype=torch.float64)
+        g2 = torch.tensor([_GRAY1[1]], dtype=torch.float64)
+        s = float(_to_np(fn(g1, g2)).ravel()[0])
+        _consensus_scales[key] = s if s > 1e-9 else 1.0
+    return _consensus_scales[key]
+
+
+def spacing_members():
+    """The individually-normalized members of the spacing consensus, for the
+    RULER-SENSITIVITY check: a metric verdict is only trustworthy if it holds
+    under EACH member ruler separately, not just under their average (a win
+    that flips with the ruler is a property of the ruler, not the space).
+    Returns {key: fn(lab1, lab2) -> numpy ΔE}, gray-step normalized."""
+    members = {"psp": perceptia_spacing}
+    try:
+        import colour  # noqa: F401
+        members["cam16"] = _cam16ucs_de
+        members["jzazbz"] = _jzazbz_de
+    except Exception:
+        pass
+    out = {}
+    for key, fn in members.items():
+        s = _member_scale(key, fn)
+        out[key] = (lambda l1, l2, _fn=fn, _s=s: _to_np(_fn(l1, l2)).ravel() / _s)
+    return out
+
+
 RULERS = {
     "difference": ciede2000,            # suprathreshold = Perceptia patch (≈canonical) — best
     "threshold":  perceptia_threshold,  # near-threshold "just visible/distinguishable"

@@ -21,22 +21,27 @@ fairness audit:
 Use fair_winhist(comparison, a, b) for the weighted ColorBench verdict, or
 fair_verdict_full(space_a, space_b, comparison) to also fold in the human pool.
 """
-from .judge_provenance import provenance_of, TIER_CIELAB, TIER_INFO
+import math
+
+from .judge_provenance import provenance_of, TIER_CIELAB, TIER_PROXY, TIER_INFO
 
 
 def metric_weight(result_key: str) -> float:
     """Fairness weight for one metric group."""
-    if provenance_of(result_key) == TIER_CIELAB:
-        return 0.0                      # Fix 3: drop CIELab-ceiling metrics
+    if provenance_of(result_key) in (TIER_CIELAB, TIER_PROXY):
+        return 0.0                      # Fix 3: drop ceiling-bound + arbitrary-target metrics
     if result_key == "gamut":
         return 1.0 / 3.0                # Fix 1: 3-gamut repeats share one vote
     return 1.0
 
 
-def fair_winhist(comparison, space_a: str, space_b: str, rel_tol: float = 0.005):
+def fair_winhist(comparison, space_a: str, space_b: str):
     """Weighted head-to-head between two spaces over comparison.tests.
+    Outcomes come from comparison.decide_outcome (abs_tie → bootstrap CI →
+    relative threshold), so this path always agrees with solo/h2h/tiered.
     Returns {'a','b','tie','weight_total', plus 'raw_a','raw_b','raw_tie' (unweighted
     for comparison), and 'dropped_cielab','gamut_collapsed'}."""
+    from .comparison import decide_outcome
     a = b = tie = 0.0
     raw_a = raw_b = raw_tie = 0
     dropped = gamut_n = 0
@@ -49,19 +54,20 @@ def fair_winhist(comparison, space_a: str, space_b: str, rel_tol: float = 0.005)
             continue
         if space_a in tr.ref_spaces or space_b in tr.ref_spaces:
             continue
-        # decide winner (same tolerance logic as comparison.py)
-        lower = getattr(mdef, "lower_is_better", True)
-        abs_tie = getattr(mdef, "abs_tie", 0) or 0
-        diff = abs(sc_a - sc_b)
-        if abs_tie > 0 and diff <= abs_tie:
-            outcome = "tie"
-        elif sc_a == sc_b:
-            outcome = "tie"
+        cont = getattr(tr, "contaminated", {}) or {}
+        if cont.get(space_a) == "full" or cont.get(space_b) == "full":
+            continue  # in-sample (fit-data overlap) — uninformative pair
+        # NaN/inf = computed but failed → loses to a finite opponent;
+        # two failures carry no information (skip).
+        fin_a = math.isfinite(sc_a); fin_b = math.isfinite(sc_b)
+        if not fin_a and not fin_b:
+            continue
+        if fin_a != fin_b:
+            outcome = "a" if fin_a else "b"
         else:
-            win_a = (sc_a < sc_b) if lower else (sc_a > sc_b)
-            loser = sc_b if win_a else sc_a
-            rel = diff / (abs(loser) + 1e-30) if loser != 0 else 1.0
-            outcome = "tie" if rel <= rel_tol else ("a" if win_a else "b")
+            tr_items = getattr(tr, "items", {}) or {}
+            outcome = decide_outcome(mdef, sc_a, sc_b,
+                                     tr_items.get(space_a), tr_items.get(space_b))
         # raw (true ColorBench, every metric counts 1) for honest before/after
         raw_a += outcome == "a"; raw_b += outcome == "b"; raw_tie += outcome == "tie"
         if w == 0:

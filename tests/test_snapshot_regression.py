@@ -116,7 +116,10 @@ def test_OKLab_live_vs_snapshot():
     device, dtype, device_name = get_device()
     space = build_space("oklab", None, device, dtype=dtype)
     live = run_test(space, device, device_name)
-    snap = load_snapshot("OKLab_2026-05-06.json")
+    # 2026-07-08 baseline: regenerated after the fairness fixes (real-ellipse
+    # MacAdam, fixed-CIELab subset bucketing). The 2026-05 snapshots predate
+    # the committed spacing-consensus ruler and had drifted wholesale.
+    snap = load_snapshot("OKLab_2026-07-08_post_fairness_fixes.json")
 
     flat_live = flatten_metrics(live)
     flat_snap = flatten_metrics(snap)

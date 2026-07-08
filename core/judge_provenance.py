@@ -12,7 +12,7 @@ has a known blue→purple hue bend; any space that CORRECTS it is penalized by
 those metrics. So a high W-L-T can hide the fact that the wins came from a
 ceiling-bound judge.
 
-This module tags every metric group by the PROVENANCE of its judge into 4 tiers,
+This module tags every metric group by the PROVENANCE of its judge into 5 tiers,
 and splits a comparison's W-L-T by tier so the trustworthy verdict is readable
 separately from the ceiling-bound one.
 
@@ -31,9 +31,11 @@ Tiers (best → worst trust for ranking a candidate space):
      CEILING-BOUND at CIE Lab's quality. A hue-correcting space (Abney-fixed,
      post-hue-warp) can look WORSE here precisely because it is BETTER. Read with
      skepticism; for hue-correcting candidates, defer to tier 1 (human loci).
+  5. heuristic_proxy — designed targets with no human or CIE grounding (even-60°
+     primary hue grid, blue-white/red-white midpoint heuristics). Diagnostic only.
 
 Headline verdict for re-ranking = tiers 1 + 2 + 3 (trustworthy).
-Tier 4 is reported separately and flagged, never folded into the headline.
+Tiers 4-5 are reported separately and flagged, never folded into the headline.
 
 Tier 1 (human psychophysical) is realized DIRECTLY by core.human_pool, which
 grounds each property (difference / hue / discrimination / 3D) in the full
@@ -50,14 +52,19 @@ TIER_HUMAN  = "human_psychophysical"
 TIER_STRUCT = "structural"
 TIER_RULER  = "human_fit_ruler"
 TIER_CIELAB = "cielab_reference"
+TIER_PROXY  = "heuristic_proxy"   # arbitrary designed target — no human/CIE grounding
 
 GROUP_PROVENANCE = {
     # 1. human_psychophysical — direct published human datasets
     "hung_berns":           TIER_HUMAN,   # constant-hue loci, human
     "ebner_fairchild":      TIER_HUMAN,   # constant perceived-hue surfaces, human
+    # munsell_*: human-data INPUT (ASTM D1535 chips) but the judge is a CV in
+    # the candidate's OWN coordinates — legitimate for a spacing property, yet
+    # any space DESIGNED to linearize Munsell (CIELab) scores well by
+    # construction. Read with that caveat.
     "munsell_value":        TIER_HUMAN,   # Munsell value scale, human
     "munsell_hue":          TIER_HUMAN,   # Munsell hue spacing, human
-    "macadam_isotropy":     TIER_HUMAN,   # MacAdam ellipses, human
+    "macadam_isotropy":     TIER_HUMAN,   # real 1942 JND ellipse geometry (fixed 2026-07)
     "pointer_gamut":        TIER_HUMAN,   # Pointer real-surface gamut, human
 
     # 2. structural — coordinate-free objective facts, no reference space
@@ -92,7 +99,6 @@ GROUP_PROVENANCE = {
     "wcag_midpoint":        TIER_RULER,   # contrast = luminance (CIE std)
     "contrast":             TIER_RULER,
     "cvd":                  TIER_RULER,   # ΔE2000 under CVD simulation
-    "specials":             TIER_RULER,
 
     # 4. cielab_reference — CEILING-BOUND: hue/geometry judged vs CIE Lab as truth
     "hue_agreement":        TIER_CIELAB,  # angular deviation from CIE Lab hue
@@ -101,8 +107,15 @@ GROUP_PROVENANCE = {
     "tint_shade_hue":       TIER_CIELAB,  # tint/shade hue drift vs CIE Lab
     "shade_hue_consistency":TIER_CIELAB,  # shade palette hue vs CIE Lab
     "harmony_accuracy":     TIER_CIELAB,  # rotation accuracy vs CIE Lab
-    "hue":                  TIER_CIELAB,  # primary hue ordering in CIE Lab terms
     "jacobian":             TIER_CIELAB,  # local uniformity vs CIE Lab geometry
+
+    # 5. heuristic_proxy — designed targets with NO human or CIE grounding.
+    #    Reported for diagnostics, never in the headline.
+    "hue":                  TIER_PROXY,   # even-60° primary grid — arbitrary target
+                                          # (real yellow ≈ 85-100°, no space places
+                                          # sRGB primaries on a 60° lattice)
+    "specials":             TIER_PROXY,   # blue-white G/R, red-white G−B, yellow-C:
+                                          # directional appearance heuristics
 }
 
 # Phase 9-11 user_* tests all measure difference/distinguishability via CIEDE2000
@@ -135,6 +148,12 @@ TIER_INFO = {
         "trustworthy": False,
         "rank": 4,
     },
+    TIER_PROXY: {
+        "label": "Sezgisel proxy (keyfi hedef — insan/CIE dayanağı yok)",
+        "ceiling": "the designed target itself",
+        "trustworthy": False,
+        "rank": 5,
+    },
 }
 
 TRUSTWORTHY_TIERS = [TIER_HUMAN, TIER_STRUCT, TIER_RULER]
@@ -162,9 +181,9 @@ def tiered_winhist(test_results, space_a: str, space_b: str):
     Returns: {tier: {"a": wins_a, "b": wins_b, "tie": ties, "n": total}} plus a
     "_headline" key aggregating the trustworthy tiers (1+2+3).
     """
-    from collections import defaultdict
+    import math
+    from .comparison import decide_outcome
     out = {t: {"a": 0, "b": 0, "tie": 0, "n": 0} for t in TIER_INFO}
-    rel_tol = 0.005  # mirror comparison.TIE_TOLERANCE default
 
     for tr in test_results:
         mdef = tr.metric
@@ -176,25 +195,24 @@ def tiered_winhist(test_results, space_a: str, space_b: str):
             continue
         if space_a in tr.ref_spaces or space_b in tr.ref_spaces:
             continue
+        cont = getattr(tr, "contaminated", {}) or {}
+        if cont.get(space_a) == "full" or cont.get(space_b) == "full":
+            continue  # in-sample (fit-data overlap) — uninformative pair
+        # NaN/inf = computed but failed → loses to a finite opponent;
+        # two failures carry no information (skip).
+        fin_a = math.isfinite(sc_a)
+        fin_b = math.isfinite(sc_b)
+        if not fin_a and not fin_b:
+            continue
+        if fin_a != fin_b:
+            out[tier]["n"] += 1
+            out[tier]["a" if fin_a else "b"] += 1
+            continue
         out[tier]["n"] += 1
-        abs_diff = abs(sc_a - sc_b)
-        abs_tie = getattr(mdef, "abs_tie", 0) or 0
-        if abs_tie > 0 and abs_diff <= abs_tie:
-            out[tier]["tie"] += 1
-            continue
-        if sc_a == sc_b:
-            out[tier]["tie"] += 1
-            continue
-        lower_better = getattr(mdef, "lower_is_better", True)
-        winner_a = (sc_a < sc_b) if lower_better else (sc_a > sc_b)
-        loser_val = sc_b if winner_a else sc_a
-        rel = abs_diff / (abs(loser_val) + 1e-30) if loser_val != 0 else 1.0
-        if rel <= rel_tol:
-            out[tier]["tie"] += 1
-        elif winner_a:
-            out[tier]["a"] += 1
-        else:
-            out[tier]["b"] += 1
+        tr_items = getattr(tr, "items", {}) or {}
+        outcome = decide_outcome(mdef, sc_a, sc_b,
+                                 tr_items.get(space_a), tr_items.get(space_b))
+        out[tier]["a" if outcome == "a" else "b" if outcome == "b" else "tie"] += 1
 
     headline = {"a": 0, "b": 0, "tie": 0, "n": 0}
     for t in TRUSTWORTHY_TIERS:

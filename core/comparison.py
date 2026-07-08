@@ -29,6 +29,11 @@ class TestResult:
     winner: str | None    # space name or None (tie)
     is_tie: bool
     ref_spaces: list      # spaces marked as self-referential for this metric
+    items: dict = field(default_factory=dict)   # {space: {"items": [...], "stat": str}}
+    winners: list = None  # all spaces statistically tied with the best
+    ci_based: bool = False  # True = tie decided by paired-bootstrap CI
+    ruler_flag: str = None  # "robust" | "sensitive" | None (no per-ruler data)
+    contaminated: dict = field(default_factory=dict)  # {space: "full"|"partial"}
 
 
 @dataclass
@@ -374,7 +379,60 @@ def _is_self_referential(space_name: str, metric_name: str, score: float,
     return False
 
 
+# Canonical tie tolerance for EVERY verdict path (solo winners, head-to-head,
+# tiered winhist, fair winhist). Convention: relative difference measured
+# against the LOSER's magnitude. Do not hardcode another value elsewhere —
+# a mismatched tolerance makes the headline and fair verdicts disagree on
+# identical scores.
 TIE_TOLERANCE = 0.01  # 1% relative tolerance for ties
+
+
+def _extract_items(results: dict, result_key: str, score_path: str):
+    """Per-item bootstrap payload for one metric, if the metric exposed it
+    (results[group]["_bootstrap"][score_path] = {"items": [...], "stat": str})."""
+    group = results.get(result_key)
+    if not isinstance(group, dict):
+        return None
+    boot = group.get("_bootstrap")
+    if not isinstance(boot, dict):
+        return None
+    payload = boot.get(score_path)
+    if isinstance(payload, dict) and payload.get("items"):
+        return payload
+    return None
+
+
+def decide_outcome(mdef, sc_a: float, sc_b: float,
+                   items_a=None, items_b=None) -> str:
+    """Pairwise outcome ('a' | 'b' | 'tie') — THE shared decision for every
+    verdict path (solo winners, h2h, tiered winhist, fair winhist).
+
+    Tie rule precedence:
+      1. abs_tie / exact equality
+      2. paired-bootstrap CI when both sides expose per-item data
+         (statistical tie: 95% CI of the aggregate difference contains 0)
+      3. TIE_TOLERANCE relative threshold (loser-denominator) fallback
+
+    Callers handle None/NaN before calling (non-finite = loss, see h2h).
+    """
+    abs_tie = getattr(mdef, "abs_tie", 0) or 0
+    diff = abs(sc_a - sc_b)
+    if abs_tie > 0 and diff <= abs_tie:
+        return "tie"
+    if sc_a == sc_b:
+        return "tie"
+    lower = getattr(mdef, "lower_is_better", True)
+    if (isinstance(items_a, dict) and isinstance(items_b, dict)
+            and items_a.get("stat") == items_b.get("stat")):
+        from .bootstrap import paired_decision
+        r = paired_decision(items_a["items"], items_b["items"],
+                            items_a["stat"], lower_is_better=lower)
+        if r is not None:
+            return r["outcome"]
+    win_a = (sc_a < sc_b) if lower else (sc_a > sc_b)
+    loser = sc_b if win_a else sc_a
+    rel = diff / (abs(loser) + 1e-30) if loser != 0 else 1.0
+    return "tie" if rel <= TIE_TOLERANCE else ("a" if win_a else "b")
 
 
 def compare_spaces(results_by_space: dict) -> Comparison:
@@ -386,16 +444,27 @@ def compare_spaces(results_by_space: dict) -> Comparison:
     Returns:
         Comparison dataclass with wins, ties, head-to-head matrix.
     """
+    from .contamination import trained_on_of, contamination_of
+
     space_names = list(results_by_space.keys())
+    declared = {s: trained_on_of(r) for s, r in results_by_space.items()}
     test_results = []
 
     for mdef in METRIC_DEFS:
         scores = {}
+        items = {}
         for sname, results in results_by_space.items():
             scores[sname] = _extract_score(results, mdef.result_key, mdef.score_path)
+            it = _extract_items(results, mdef.result_key, mdef.score_path)
+            if it:
+                items[sname] = it
 
-        # Skip metric if no space has a score
-        valid_scores = {k: v for k, v in scores.items() if v is not None}
+        # Skip metric if no space has a score.
+        # None = not applicable (skip); NaN/inf = computed but failed —
+        # a non-finite score can never win or tie, so it is excluded here
+        # (h2h below counts it as a loss against any finite opponent).
+        valid_scores = {k: v for k, v in scores.items()
+                        if v is not None and math.isfinite(v)}
         if not valid_scores:
             continue
 
@@ -405,36 +474,68 @@ def compare_spaces(results_by_space: dict) -> Comparison:
             if _is_self_referential(sname, mdef.name, score, valid_scores):
                 ref_spaces.append(sname)
 
-        # Find winner among non-ref spaces
-        fair_scores = {k: v for k, v in valid_scores.items() if k not in ref_spaces}
+        # Fit-data contamination (three-way holdout enforced): a space fit on
+        # the judge's own dataset scores in-sample there — "full" level is
+        # excluded from winning like a reference space; "partial" is reported.
+        contaminated = {}
+        for sname in valid_scores:
+            level = contamination_of(mdef.result_key, declared.get(sname) or set())
+            if level:
+                contaminated[sname] = level
+
+        # Find winner among non-ref, non-contaminated spaces
+        fair_scores = {k: v for k, v in valid_scores.items()
+                       if k not in ref_spaces and contaminated.get(k) != "full"}
         if not fair_scores:
-            test_results.append(TestResult(mdef, scores, None, True, ref_spaces))
+            test_results.append(TestResult(mdef, scores, None, True, ref_spaces,
+                                           items, contaminated=contaminated))
             continue
 
+        ci_based = len(items) >= 2
         if mdef.lower_is_better:
-            best_val = min(fair_scores.values())
+            best_space = min(fair_scores, key=fair_scores.get)
         else:
-            best_val = max(fair_scores.values())
+            best_space = max(fair_scores, key=fair_scores.get)
+        best_val = fair_scores[best_space]
 
-        # Check for ties (within tolerance)
-        # Use absolute tolerance if defined, otherwise relative
-        winners = []
+        # Winners = best space + every space whose outcome vs best is a tie
+        # (decide_outcome: abs_tie → bootstrap CI → relative threshold)
+        winners = [best_space]
         for sname, score in fair_scores.items():
-            if best_val == 0:
-                if score == 0 or (mdef.abs_tie > 0 and abs(score) <= mdef.abs_tie):
-                    winners.append(sname)
-            elif mdef.abs_tie > 0 and abs(score - best_val) <= mdef.abs_tie:
-                # Absolute tolerance: both within machine precision
+            if sname == best_space:
+                continue
+            outcome = decide_outcome(mdef, score, best_val,
+                                     items.get(sname), items.get(best_space))
+            if outcome == "tie":
                 winners.append(sname)
-            else:
-                rel_diff = abs(score - best_val) / (abs(best_val) + 1e-30)
-                if rel_diff <= TIE_TOLERANCE:
-                    winners.append(sname)
 
         is_tie = len(winners) > 1
         winner = winners[0] if len(winners) == 1 else None
 
-        test_results.append(TestResult(mdef, scores, winner, is_tie, ref_spaces))
+        # Ruler-sensitivity: when the metric ships per-ruler values, check
+        # whether the SAME space wins under every consensus-member ruler.
+        # A win that flips with the ruler is a property of the ruler, not
+        # the space — flagged, and worth less trust.
+        ruler_flag = None
+        per_ruler = {}
+        for sname in fair_scores:
+            rs = results_by_space[sname].get(mdef.result_key, {})
+            payload = rs.get("_ruler_sensitivity", {}) if isinstance(rs, dict) else {}
+            entry = payload.get(mdef.score_path)
+            if isinstance(entry, dict) and len(entry) >= 2:
+                per_ruler[sname] = entry
+        if len(per_ruler) == len(fair_scores) and len(fair_scores) >= 2:
+            rkeys = set.intersection(*(set(v) for v in per_ruler.values()))
+            if len(rkeys) >= 2:
+                pick = min if mdef.lower_is_better else max
+                ruler_winners = {
+                    pick(fair_scores, key=lambda s: per_ruler[s][rk])
+                    for rk in rkeys}
+                ruler_flag = "robust" if len(ruler_winners) == 1 else "sensitive"
+
+        test_results.append(TestResult(mdef, scores, winner, is_tie, ref_spaces,
+                                       items, winners, ci_based, ruler_flag,
+                                       contaminated))
 
     # Count wins
     solo_wins = {s: 0 for s in space_names}
@@ -442,17 +543,9 @@ def compare_spaces(results_by_space: dict) -> Comparison:
     for tr in test_results:
         if tr.winner:
             solo_wins[tr.winner] += 1
-        elif tr.is_tie:
-            # Count which spaces are in the tie
-            fair = {k: v for k, v in tr.scores.items()
-                    if v is not None and k not in tr.ref_spaces}
-            if fair:
-                best = min(fair.values()) if tr.metric.lower_is_better else max(fair.values())
-                for sname, score in fair.items():
-                    if score is not None:
-                        rel_diff = abs(score - best) / (abs(best) + 1e-30) if best != 0 else (0 if score == 0 else 1)
-                        if rel_diff <= TIE_TOLERANCE:
-                            shared_wins[sname] += 1
+        elif tr.is_tie and tr.winners:
+            for sname in tr.winners:
+                shared_wins[sname] += 1
 
     # Head-to-head matrix
     h2h = {}
@@ -466,42 +559,36 @@ def compare_spaces(results_by_space: dict) -> Comparison:
                 sc2 = tr.scores.get(s2)
                 if sc1 is None or sc2 is None:
                     continue
-                # Skip if either is self-referential
+                # Skip if either is self-referential or in-sample (fit on the
+                # judge's dataset) — the pair is uninformative
                 if s1 in tr.ref_spaces or s2 in tr.ref_spaces:
                     continue
+                if tr.contaminated.get(s1) == "full" or tr.contaminated.get(s2) == "full":
+                    continue
 
-                # Check absolute tie first (same logic as solo winner)
-                abs_diff = abs(sc1 - sc2)
-                if tr.metric.abs_tie > 0 and abs_diff <= tr.metric.abs_tie:
-                    tie += 1
-                elif sc1 == sc2:
-                    tie += 1
-                elif tr.metric.lower_is_better:
-                    if sc1 < sc2:
-                        rel = abs_diff / (abs(sc2) + 1e-30) if sc2 != 0 else (0 if sc1 == 0 else 1)
-                        if rel > TIE_TOLERANCE:
-                            w1 += 1
-                        else:
-                            tie += 1
-                    else:
-                        rel = abs_diff / (abs(sc1) + 1e-30) if sc1 != 0 else (0 if sc2 == 0 else 1)
-                        if rel > TIE_TOLERANCE:
-                            w2 += 1
-                        else:
-                            tie += 1
+                # NaN/inf = the space failed to compute this metric.
+                # A failure loses to any finite opponent; two failures carry
+                # no information. Without this, min()/comparisons involving
+                # NaN made the verdict depend on CLI argument order.
+                fin1 = math.isfinite(sc1)
+                fin2 = math.isfinite(sc2)
+                if not fin1 and not fin2:
+                    continue
+                if not fin1:
+                    w2 += 1
+                    continue
+                if not fin2:
+                    w1 += 1
+                    continue
+
+                outcome = decide_outcome(tr.metric, sc1, sc2,
+                                         tr.items.get(s1), tr.items.get(s2))
+                if outcome == "a":
+                    w1 += 1
+                elif outcome == "b":
+                    w2 += 1
                 else:
-                    if sc1 > sc2:
-                        rel = abs_diff / (abs(sc1) + 1e-30) if sc1 != 0 else (0 if sc2 == 0 else 1)
-                        if rel > TIE_TOLERANCE:
-                            w1 += 1
-                        else:
-                            tie += 1
-                    else:
-                        rel = abs_diff / (abs(sc2) + 1e-30) if sc2 != 0 else (0 if sc1 == 0 else 1)
-                        if rel > TIE_TOLERANCE:
-                            w2 += 1
-                        else:
-                            tie += 1
+                    tie += 1
 
             h2h[(s1, s2)] = {"w1": w1, "w2": w2, "tie": tie}
 
@@ -516,8 +603,18 @@ def compare_spaces(results_by_space: dict) -> Comparison:
 
 def print_summary(comp: Comparison):
     """Print terminal summary of comparison results."""
+    n_ci = sum(1 for tr in comp.tests if tr.ci_based)
+    sensitive = [tr.metric.name for tr in comp.tests if tr.ruler_flag == "sensitive"]
+    n_robust = sum(1 for tr in comp.tests if tr.ruler_flag == "robust")
     print(f"\n{'='*60}")
     print(f"  COMPARISON RESULTS ({len(comp.tests)} metrics)")
+    print(f"  tie kararı: {n_ci} metrik paired-bootstrap CI (%95), "
+          f"{len(comp.tests) - n_ci} metrik %{TIE_TOLERANCE*100:.0f} eşik")
+    if n_robust or sensitive:
+        print(f"  cetvel kontrolü: {n_robust} metrik RULER-ROBUST "
+              f"(3 cetvelde de aynı kazanan), {len(sensitive)} metrik SENSITIVE")
+        for name in sensitive:
+            print(f"    ⚠ cetvele göre dönüyor: {name}")
     print(f"{'='*60}")
 
     print(f"\n  {'Space':20s} {'Solo':>6s} {'Shared':>8s}")
