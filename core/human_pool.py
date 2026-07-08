@@ -515,22 +515,36 @@ def judge_tolerance_vectors(space, name="berns_1991_rit_dupont_tolerance_vectors
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 3e — Hong 2025 dense JND field (DIAGNOSTIC: display≈sRGB assumption)
+#  JUDGE 3e — Hong 2025 dense JND field (fully colorimetric via OSF calibration)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
-    """Hong et al. 2025 Wishart-Process JND ellipse field. Coordinates are
-    DKL-derived 2DW units; mapped to display RGB via the dataset's calibration
-    matrix (raw/M_2DWToRGB). The display (DELL OLED) → XYZ calibration is NOT
-    in the canonical export, so device RGB is APPROXIMATED as sRGB — keep this
-    judge in the diagnostic tier (validated=False) until a real display
-    characterization is added. Rows are subsampled (stride) because Wishart
-    smoothing makes neighbors dependent (effective DOF ≈ 100/subject)."""
-    mpath = _ds_path(name, "raw", "M_2DWToRGB_DELL_02242025_copy.csv")
-    if not os.path.exists(mpath):
+    """Hong et al. 2025 Wishart-Process JND ellipse field (the modern
+    MacAdam-1942 successor: 8 observers × 103×103 grid).
+
+    Pipeline (2026-07-08 upgrade, calibration pulled from OSF k27js):
+      2DW ellipse → M_2DWToRGB → LINEAR monitor RGB (per the calibration
+      README: RGB is linear, NOT gamma-encoded) → M_RGBToXYZ1931 (PR-670
+      measured DELL U2723QE primaries; Y in cd/m², white ≈ 190 cd/m²) →
+      normalize to relative XYZ → Bradford monitor-white → D65.
+    This replaced the earlier device≈sRGB approximation, which was doubly
+    wrong (wrong primaries AND sRGB gamma applied to linear values).
+
+    Rows are subsampled (stride) because Wishart smoothing makes neighbors
+    dependent (effective DOF ≈ 100/subject)."""
+    m1p = _ds_path(name, "raw", "M_2DWToRGB_DELL_02242025_copy.csv")
+    m2p = _ds_path(name, "raw", "M_RGBToXYZ1931_DELL_02242025_copy.csv")
+    if not os.path.exists(m1p):
         return {"name": name, "skipped": "no M_2DWToRGB calibration matrix"}
-    M = np.loadtxt(mpath, delimiter=",", dtype=np.float64)
-    if M.shape != (3, 3):
-        return {"name": name, "skipped": f"unexpected matrix shape {M.shape}"}
+    if not os.path.exists(m2p):
+        return {"name": name, "skipped": "no M_RGBToXYZ1931 calibration matrix "
+                                         "(pull from OSF k27js)"}
+    M1 = np.loadtxt(m1p, delimiter=",", dtype=np.float64)
+    M2 = np.loadtxt(m2p, delimiter=",", dtype=np.float64)
+    if M1.shape != (3, 3) or M2.shape != (3, 3):
+        return {"name": name, "skipped": "unexpected calibration matrix shape"}
+    white_abs = M2 @ np.ones(3)          # monitor white, Y in cd/m²
+    white_rel = white_abs / white_abs[1]
+
     rows = load_canonical(name)
     cols = rows[0].keys()
     if not {"x_c", "y_c", "a", "b", "theta_deg"}.issubset(cols):
@@ -549,19 +563,19 @@ def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
         px = xc + ex * math.cos(th) - ey * math.sin(th)
         py = yc + ex * math.sin(th) + ey * math.cos(th)
         pts_2dw = np.vstack([[xc, yc], np.column_stack([px, py])])
-        # homogeneous 2DW → device RGB (≈ sRGB)
         homog = np.column_stack([pts_2dw, np.ones(len(pts_2dw))])
-        rgb = homog @ M.T
+        rgb = homog @ M1.T                       # LINEAR monitor RGB
         if np.any(rgb < -0.05) or np.any(rgb > 1.05):
             continue
-        xyz = _srgb_to_xyz(np.clip(rgb, 0, 1))
+        xyz = np.clip(rgb, 0, 1) @ M2.T / white_abs[1]   # relative XYZ1931
+        xyz = cat_to_d65(xyz, white_rel)
         lab = _space_forward(space, xyz)
         d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
             "mean_cv": float(np.mean(cvs)) if cvs else None,
-            "note": "display RGB ≈ sRGB approximation — diagnostic only"}
+            "note": "measured-primaries colorimetry (OSF k27js calibration)"}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -699,8 +713,10 @@ REGISTRY = [
     ("3d_discrim",    "brown_macadam_1949_ellipsoids", judge_jnd_ellipsoid_g,        "mean_cv",      True),
     ("tolerance",     "huang_2012_cielab_ellipses",   judge_lab_ellipsoid,           "mean_cv",      True),
     ("tolerance",     "berns_1991_rit_dupont_tolerance_vectors", judge_tolerance_vectors, "mean_cv", True),
+    # 2026-07-08: promoted to validated — measured-primaries colorimetry from
+    # OSF k27js replaced the sRGB approximation (direction + range checks pass)
+    ("discrimination","hong_2025_ellipsoids",         judge_hong_2dw,                "mean_cv",      True),
     # diagnostic / mechanism tier (geometric spaces are expected to score ~null)
-    ("discrimination","hong_2025_ellipsoids",         judge_hong_2dw,                "mean_cv",      False),  # display≈sRGB approx
     ("hk_mechanism",  "wyszecki_1967_osa_tiles",      judge_hk,                      "spearman_rho", False),
     ("hk_mechanism",  "zhang_2023_laser_display_brightness", judge_hk,               "spearman_rho", False),
     ("hk_mechanism",  "sanders_wyszecki_1964_HK",     judge_hk,                      "spearman_rho", False),

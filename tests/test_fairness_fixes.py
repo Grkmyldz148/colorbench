@@ -265,9 +265,10 @@ def test_new_pool_judges_sane():
                "berns_1991_rit_dupont_tolerance_vectors", "hong_2025_ellipsoids",
                "sanders_wyszecki_1964_HK"):
         assert ds in wired, ds
-    # hong stays diagnostic (display≈sRGB approximation)
+    # hong promoted to validated (2026-07-08: OSF measured-primaries
+    # calibration replaced the sRGB approximation)
     hong = [e for e in hp.REGISTRY if e[1] == "hong_2025_ellipsoids"][0]
-    assert hong[4] is False
+    assert hong[4] is True
 
 
 def test_ruler_sensitivity_flag():
