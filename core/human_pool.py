@@ -303,7 +303,7 @@ def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True):
     need = {"x_c", "y_c", "a", "b", "theta_deg"}
     if not need.issubset(cols):
         return {"name": name, "skipped": "not xy-ellipse schema", "available": list(cols)}
-    white = _white_for(meta(name)["illuminant"])
+    default_white = _white_for(meta(name)["illuminant"])
     phis = np.linspace(0, 2 * math.pi, n_phi, endpoint=False)
     cvs = []
     for r in rows:
@@ -318,6 +318,10 @@ def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True):
         xy = np.vstack([[xc, yc], np.column_stack([px, py])])
         xyz = xyY_to_xyz(xy[:, 0], xy[:, 1], np.full(len(xy), Y))
         if adapt_d65:
+            # mixed-illuminant sets (alder1982: 42 D65 + 39 A rows) carry a
+            # per-row illuminant column — adapt each row under ITS OWN white
+            row_illum = (r.get("illuminant") or "").strip()
+            white = _white_for(row_illum) if row_illum else default_white
             xyz = cat_to_d65(xyz, white)
         lab = _space_forward(space, xyz)
         d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
