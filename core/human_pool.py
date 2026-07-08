@@ -579,6 +579,203 @@ def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 4a — unique hues (Xiao 2011): constant-hue test on unique-hue loci
+# ════════════════════════════════════════════════════════════════════════════
+def _load_csv(name, filename):
+    p = _ds_path(name, filename)
+    if not os.path.exists(p):
+        return None
+    with open(p, newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def judge_unique_hues(space, name="xiao_unique_hues"):
+    """Xiao et al. 2011: 185 observers set unique red/green/blue/yellow at 9
+    lightness-chroma settings. All 9 settings of one unique hue are the SAME
+    perceived hue, so a good space maps them to a constant hue angle — the
+    unique-hue version of the Hung-Berns constant-hue test.
+
+    Pipeline: mean XYZ per (hue, level) over observers×sessions (the long
+    canonical reproduces averages.json to 7e-14), Y normalized by the 114.6
+    cd/m² adapting luminance, Bradford CRT-background-white → D65, then
+    circular MAD of the space's hue angle per unique hue; mean over 4 hues."""
+    rows = _load_csv(name, "unique_hues_long.csv")
+    if rows is None:
+        return {"name": name, "skipped": "unique_hues_long.csv not built"}
+    ADAPT_Y = 114.6
+    BG_XY = (0.2897, 0.2977)
+    sums = {}
+    for r in rows:
+        key = (r["hue"], r["level"])
+        v = sums.setdefault(key, [0.0, 0.0, 0.0, 0])
+        v[0] += float(r["X"]); v[1] += float(r["Y"]); v[2] += float(r["Z"])
+        v[3] += 1
+    white = xyY_to_xyz(np.array([BG_XY[0]]), np.array([BG_XY[1]]), np.array([1.0]))[0]
+    mads = []
+    for hue in ("red", "green", "blue", "yellow"):
+        pts = np.array([[sums[(hue, str(l))][i] / sums[(hue, str(l))][3]
+                         for i in range(3)] for l in range(9)])
+        xyz = pts / ADAPT_Y
+        xyz = cat_to_d65(xyz, white)
+        lab = _space_forward(space, np.clip(xyz, 0, None))
+        h = np.degrees(np.arctan2(lab[:, 2], lab[:, 1]))
+        mads.append(_circ_mad_deg(h))
+    return {"name": name, "n_hues": len(mads),
+            "mean_mad_deg": float(np.mean(mads)),
+            "per_hue": {h: round(m, 2) for h, m in
+                        zip(("red", "green", "blue", "yellow"), mads)}}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 4b — WCS naming (DIAGNOSTIC: naming is known to be space-insensitive)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_wcs_naming(space, name="wcs", min_chips_per_term=3):
+    """World Color Survey category compactness: per language, chips sharing
+    the modal color term should sit closer together in a good space than
+    chips with different terms. Score = mean(within-term pairwise distance) /
+    mean(between-term distance), averaged over 110 languages. DIAGNOSTIC —
+    project history shows naming is nearly space-insensitive (~88% for every
+    space), so this stays out of the headline."""
+    naming = _load_csv(name, "naming_long.csv")
+    chips = _load_csv(name, "chips.csv")
+    if naming is None or chips is None:
+        return {"name": name, "skipped": "naming_long.csv / chips.csv missing"}
+    ccols = chips[0].keys()
+    idc = next((c for c in ("chip_id", "cnum", "id") if c in ccols), None)
+    if idc is None or not {"L", "a", "b"}.issubset(ccols):
+        return {"name": name, "skipped": "chips.csv lacks id/L/a/b",
+                "available": list(ccols)}
+    chip_ids = [int(r[idc]) for r in chips]
+    lab = np.array([[float(r["L"]), float(r["a"]), float(r["b"])] for r in chips])
+    white = _white_for("illuminant C")   # WCS chips are Munsell under C
+    xyz = cat_to_d65(lab_to_xyz(lab, white), white)
+    coords = _space_forward(space, np.clip(xyz, 0, None))
+    idx_of = {cid: i for i, cid in enumerate(chip_ids)}
+    D = np.sqrt(((coords[:, None, :] - coords[None, :, :]) ** 2).sum(-1))
+
+    # modal term per (lang, chip)
+    counts = {}
+    for r in naming:
+        code = r["term_code"]
+        if code == "*":
+            continue
+        key = (r["lang_id"], int(r["chip_id"]))
+        c = counts.setdefault(key, {})
+        c[code] = c.get(code, 0) + 1
+    modal = {}
+    for (lang, chip), c in counts.items():
+        modal.setdefault(lang, {})[chip] = max(c, key=c.get)
+
+    ratios = []
+    for lang, chip_terms in modal.items():
+        groups = {}
+        for chip, term in chip_terms.items():
+            if chip in idx_of:
+                groups.setdefault(term, []).append(idx_of[chip])
+        groups = {t: g for t, g in groups.items() if len(g) >= min_chips_per_term}
+        if len(groups) < 2:
+            continue
+        members = {i: t for t, g in groups.items() for i in g}
+        ids = sorted(members)
+        within, between = [], []
+        for ai in range(len(ids)):
+            for bi in range(ai + 1, len(ids)):
+                d = D[ids[ai], ids[bi]]
+                (within if members[ids[ai]] == members[ids[bi]] else between).append(d)
+        if within and between:
+            ratios.append(float(np.mean(within) / np.mean(between)))
+    return {"name": name, "n_languages": len(ratios),
+            "ratio": float(np.mean(ratios)) if ratios else None,
+            "note": "lower = categories more compact; naming is nearly "
+                    "space-insensitive (diagnostic)"}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 4c — observer metamerism (DIAGNOSTIC: Asano CMFs × natural spectra)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_observer_metamerism(space, name="asano_observers",
+                              obs_dataset="151ind", n_stimuli=60):
+    """Observer-metamerism magnitude AS SEEN BY the candidate space: for each
+    natural-object reflectance under D65, compute XYZ with each of Asano's
+    individual-observer CMFs, map through the space, and measure the spread
+    (mean distance to the observer-mean) in gray-step units (CIELAB L*50→51
+    gray mapped through the space). DIAGNOSTIC — reports how LARGE observer
+    disagreement looks in the space's own metric; no canonical better/worse
+    direction, so it never enters the headline."""
+    fund = _load_csv(name, "observer_fundamentals_long.csv")
+    if fund is None:
+        return {"name": name, "skipped": "observer_fundamentals_long.csv not built"}
+    refl_rows = load_canonical("natural_objects_2024_southern_cone_spectra")
+    if not refl_rows:
+        return {"name": name, "skipped": "natural_objects canonical missing"}
+    try:
+        import colour
+        sd = colour.SDS_ILLUMINANTS["D65"]
+    except Exception as e:
+        return {"name": name, "skipped": f"colour-science unavailable: {e!r}"}
+
+    # observer CMFs: {obs: (3, n_wl)} on 390-780/5
+    wl_grid = np.arange(390, 781, 5)
+    cmf = {}
+    for r in fund:
+        if r["dataset"] != obs_dataset or r["field_of_view_deg"] != "2" \
+                or r["function_type"] != "xyz":
+            continue
+        o = int(r["observer_id"])
+        arr = cmf.setdefault(o, np.zeros((3, len(wl_grid))))
+        pi = {"x": 0, "y": 1, "z": 2}[r["primary"]]
+        wi = (int(r["wavelength_nm"]) - 390) // 5
+        arr[pi, wi] = float(r["value"])
+    if not cmf:
+        return {"name": name, "skipped": f"no observers for {obs_dataset}"}
+    obs_ids = sorted(cmf)
+
+    # reflectances: numeric-named columns are wavelengths
+    rcols = sorted((int(c) for c in refl_rows[0].keys() if c.strip().isdigit()))
+    r_wl = np.array(rcols, dtype=float)
+    lo = max(390, rcols[0])
+    hi = min(780, rcols[-1])
+    grid = wl_grid[(wl_grid >= lo) & (wl_grid <= hi)]
+    gsel = np.isin(wl_grid, grid)
+    step = max(1, len(refl_rows) // n_stimuli)
+    stim = []
+    for r in refl_rows[::step][:n_stimuli]:
+        try:
+            vals = np.array([float(r[str(c)]) for c in rcols])
+        except ValueError:
+            continue
+        stim.append(np.interp(grid, r_wl, vals))
+    stim = np.array(stim)                      # (S, n_grid)
+    E = np.interp(grid, sd.wavelengths, sd.values)
+
+    # per-observer XYZ (each observer normalized by its own white)
+    spreads = []
+    gray_ref = None
+    coords_by_obs = []
+    for o in obs_ids:
+        T = cmf[o][:, gsel]                    # (3, n_grid)
+        k = 1.0 / np.dot(E, T[1])
+        xyz = (stim * E[None, :]) @ T.T * k    # (S, 3), relative
+        coords_by_obs.append(_space_forward(space, np.clip(xyz, 0, None)))
+    C = np.stack(coords_by_obs)                # (O, S, 3)
+    mean_c = C.mean(axis=0, keepdims=True)
+    spread = np.sqrt(((C - mean_c) ** 2).sum(-1)).mean(axis=0)  # (S,)
+
+    # gray step in the candidate space (CIELAB L*50→51 neutral)
+    d65w = _white_for("D65")
+    g = lab_to_xyz(np.array([[50.0, 0, 0], [51.0, 0, 0]]), d65w)
+    gl = _space_forward(space, g)
+    gray_step = float(np.sqrt(((gl[1] - gl[0]) ** 2).sum()))
+    if gray_step <= 0:
+        return {"name": name, "skipped": "degenerate gray step"}
+    return {"name": name, "n_observers": len(obs_ids), "n_stimuli": len(stim),
+            "mean_spread_graysteps": float(np.mean(spread) / gray_step),
+            "max_spread_graysteps": float(np.max(spread) / gray_step),
+            "note": "observer disagreement in the space's own gray-step units "
+                    "(diagnostic — no canonical direction)"}
+
+
+# ════════════════════════════════════════════════════════════════════════════
 #  JUDGE 5 — H-K brightness (mechanism diagnostic: does space-L boost with chroma?)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_hk(space, name="wyszecki_1967_osa_tiles", adapt_d65=True):
@@ -702,6 +899,7 @@ REGISTRY = [
     ("hue",           "hung_berns",                   judge_constant_hue,            "mean_mad_deg", True),
     ("hue",           "ebner_fairchild",              judge_constant_hue,            "mean_mad_deg", True),
     ("hue",           "munsell",                      judge_constant_hue,            "mean_mad_deg", True),
+    ("hue",           "xiao_unique_hues",             judge_unique_hues,             "mean_mad_deg", True),
     ("discrimination","macadam1942",                  judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","luo_rigg_ellipses",            judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","alder1982",                    judge_jnd_ellipse,             "mean_cv",      True),
@@ -721,6 +919,8 @@ REGISTRY = [
     ("hk_mechanism",  "zhang_2023_laser_display_brightness", judge_hk,               "spearman_rho", False),
     ("hk_mechanism",  "sanders_wyszecki_1964_HK",     judge_hk,                      "spearman_rho", False),
     ("adaptation",    "corresponding_colours",        judge_corresponding,           "mean_de",      False),
+    ("naming",        "wcs",                          judge_wcs_naming,              "ratio",        False),  # naming ~space-insensitive
+    ("observer_variance", "asano_observers",          judge_observer_metamerism,     "mean_spread_graysteps", False),  # no canonical direction
 ]
 
 # property → which direction is "better" (all our validated keys: lower=better)
@@ -764,7 +964,8 @@ def compare_on_pool(space_a, space_b, name_a="A", name_b="B", validated_only=Tru
     fit_a = trained_on_of(space_a)
     fit_b = trained_on_of(space_b)
     for prop in ["difference", "difference_rank", "hue", "discrimination",
-                 "3d_discrim", "tolerance", "hk_mechanism", "adaptation"]:
+                 "3d_discrim", "tolerance", "hk_mechanism", "adaptation",
+                 "naming", "observer_variance"]:
         if prop not in ra:
             continue
         lower = prop in _LOWER_BETTER

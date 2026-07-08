@@ -270,6 +270,21 @@ def test_new_pool_judges_sane():
     hong = [e for e in hp.REGISTRY if e[1] == "hong_2025_ellipsoids"][0]
     assert hong[4] is True
 
+    # xiao unique-hue judge: constant-hue property on unique-hue loci —
+    # degenerate raw-XYZ must be worse than a real perceptual space
+    x_ok = hp.judge_unique_hues(ok)
+    x_raw = hp.judge_unique_hues(raw)
+    if "skipped" not in x_ok:
+        assert 0 < x_ok["mean_mad_deg"] < 15
+        assert x_raw["mean_mad_deg"] > x_ok["mean_mad_deg"]
+
+    # naming + observer_variance stay diagnostic (no canonical direction /
+    # known space-insensitive)
+    for ds in ("wcs", "asano_observers"):
+        entry = [e for e in hp.REGISTRY if e[1] == ds][0]
+        assert entry[4] is False
+        assert entry[0] not in hp._LOWER_BETTER
+
 
 def test_ruler_sensitivity_flag():
     """Gradient metrics ship per-ruler aggregates; compare_spaces flags each
