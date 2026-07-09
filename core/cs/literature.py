@@ -48,6 +48,7 @@ class IPT(ColorSpace):
 
     def __init__(self, device: torch.device):
         self.device = device
+        self.dtype = torch.float64
         # Hunt-Pointer-Estevez for D65 (Ebner & Fairchild)
         self.M_LMS = torch.tensor([
             [ 0.4002,  0.7075, -0.0807],
@@ -118,6 +119,7 @@ class JzAzBz(ColorSpace):
 
     def __init__(self, device: torch.device):
         self.device = device
+        self.dtype = torch.float64
 
         # Pre-conditioning:  X' = b*X - (b-1)*Z;  Y' = g*Y + (1-g)*X;  Z' = Z
         # In matrix form on [X, Y, Z]:
@@ -237,6 +239,7 @@ class ICtCp(ColorSpace):
 
     def __init__(self, device: torch.device):
         self.device = device
+        self.dtype = torch.float64
 
         # XYZ (D65) → Rec.2020 linear RGB
         self.M_XYZ_to_R2020 = torch.tensor([
@@ -324,6 +327,7 @@ class CAM16UCS(ColorSpace):
 
     def __init__(self, device: torch.device):
         self.device = device
+        self.dtype = torch.float64
 
         # Viewing conditions (D65, La=40, Yb=20, average surround)
         La = 40.0
@@ -505,6 +509,7 @@ class DIN99d(ColorSpace):
 
     def __init__(self, device: torch.device):
         self.device = device
+        self.dtype = torch.float64
         self.d65 = D65.to(device)
         self.delta = 6.0 / 29.0
         self.delta3 = self.delta ** 3
