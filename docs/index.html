@@ -44,18 +44,20 @@
      · human data from
      <a href="https://github.com/Grkmyldz148/color-perception-datasets">color-perception-datasets</a>
      · <span id="gen"></span></p>
-  <p class="method"><b>Measurement</b> = STRESS on the real difference datasets,
-     each model with its own ΔE. The <b>Overfit Δrank</b> column is how many ranks
-     a model drops from COMBVD (possible training set) to the held-out MacAdam
-     1974 — a positive value means it does relatively better where it may have
-     been fit. <b>Generation</b> is broken down <b>by gamut</b> (sRGB / Display-P3
-     / Rec2020): round-trip precision, gamut-mapping hue monotonicity and ΔE
-     smoothness, then gradient evenness and per-dataset human hue /
-     discrimination / spacing. <b>Rank swing</b> = worst minus best rank across
-     the 7 independent human datasets — low means a robust generalist, high means
-     a narrow specialist (the empirical fingerprint of overfitting). A dash means
-     the metric couldn't be measured (e.g. a degenerate gamut-mapping). Colour-science
-     spaces use their canonical reference implementations.</p>
+  <p class="method"><b>Measurement</b> = STRESS on 5 independent difference
+     sources — COMBVD unpacked into its components (BFD-P, Leeds, Witt,
+     RIT-DuPont) plus held-out MacAdam 1974 — each model scoring with its own ΔE;
+     hover a cell for its 95% CI. <b>Overfit Δrank</b> = held-out rank minus mean
+     in-sample rank (+ = relatively better where a model may have been fit).
+     <b>Generation</b> is broken down <b>by gamut</b> (sRGB / Display-P3 /
+     Rec2020): round-trip precision, gamut-mapping hue monotonicity and ΔE
+     smoothness, then gradient evenness and per-dataset human hue / discrimination
+     / spacing; its overall rank weighs each category equally. <b>Rank swing</b> =
+     worst minus best rank across the independent datasets — low means a robust
+     generalist, high means a narrow specialist (the empirical fingerprint of
+     overfitting). A dash means the metric couldn't be measured (e.g. a
+     degenerate gamut-mapping). Colour-science spaces use their canonical
+     reference implementations.</p>
 </footer>
 
 <script src="leaderboard-data.js"></script>
