@@ -81,6 +81,16 @@ def _hex_xyz(hx, ms, space=None):
 def _cv(t):
     return float((t.std() / (t.mean() + 1e-9)).item())
 
+# NOTE (2026-07-09): tried swapping these application diagnostics from CIEDE2000
+# to the spacing-consensus ruler (to remove CIELab/CIEDE2000 bias). REJECTED:
+# the gray-step-normalized consensus is numerically unstable on the diverse
+# gradient inputs here — it returns NaN on tone scales that pass near neutral
+# (Tailwind/Material) and blows the step-CV up ~10× (its members disagree wildly
+# across the gamut). CIEDE2000 is robust across all of sRGB and is the right
+# FIXED reference for these already-unscored diagnostics; the consensus ruler
+# stays where it belongs — the fairness verdict's `spacing` property, on curated
+# in-gamut datasets. See core/rulers.spacing_consensus.
+
 def _hue_cstd_torch(h_rad):
     sin_m = h_rad.sin().mean(); cos_m = h_rad.cos().mean()
     R = torch.hypot(sin_m, cos_m).item()
