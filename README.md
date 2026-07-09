@@ -44,6 +44,14 @@ profile.html("report.html")
 Output: terminal summary + JSON reports + an HTML comparison, all written to
 `results/` (which is **git-ignored** — it holds run artifacts, not source).
 
+**Data resolves itself.** Set `COLORBENCH_DATA` / `COLOR_PERCEPTION_POOL` to
+point at the datasets, or let `core/data.py` auto-download the
+[`color-perception-datasets`](https://github.com/Grkmyldz148/color-perception-datasets)
+pool into `~/.cache/colorbench` on first run — no fixed sibling checkout
+required. All 11 built-in literature spaces (OKLab, CIELab, IPT, JzAzBz, ICtCp,
+CAM16-UCS, DIN99d, Perceptia, …) run end-to-end; any external space enters with
+two callables via `cb.wrap`.
+
 ## The three runners (what each one is for)
 
 | Script | Purpose |
@@ -97,8 +105,8 @@ audited and corrected, not assumed. Full audit:
   1% threshold survives only for metrics without item structure, and every run
   reports which rule decided how many metrics. STRESS scores print with CI95.
 - **Ruler-sensitivity flag.** Spacing-ruler metrics are additionally computed
-  under EACH consensus member (Perceptia-Spacing / CAM16-UCS / Jzazbz); a
-  verdict that flips with the ruler is flagged `SENSITIVE` — a property of the
+  under EACH consensus member (Perceptia-Spacing / CAM16-UCS / Jzazbz / OSA-UCS);
+  a verdict that flips with the ruler is flagged `SENSITIVE` — a property of the
   ruler, not the space.
 - **Contamination guard.** Candidates declare fit data (`"trained_on"` in the
   params JSON / `cb.wrap(..., trained_on=[...])`). Judges built on a declared
@@ -110,6 +118,30 @@ audited and corrected, not assumed. Full audit:
   per-property winners — deliberately **no overall score**, because no space is
   best at everything (the project's central finding).
 
+**Methodology v3 (2026-07-09):**
+- **Metric-mode holdout.** The difference-prediction mode now enforces the same
+  three-way holdout as the generation mode: a metric space declares `trained_on`
+  in its params JSON, each STRESS dataset is tagged held-out / in-sample /
+  unverified, and the average-STRESS ranking uses **held-out sets only**
+  (in-sample excluded). No declaration → every set flagged `unverified`.
+- **Munsell-independent spacing.** OSA-UCS joins the spacing consensus as a 4th
+  ruler (`colour.XYZ_to_OSA_UCS`), dropping Perceptia-Spacing's Munsell-fit
+  weight 1/3 → 1/4 so **3/4 of the consensus is Munsell-independent**.
+- **CVD simulation validated.** `core/cvd_validation.py` checks ColorBench's
+  Brettel CVD simulation against real Regan-Reffin-Mollon (1994) observer
+  ellipses: confusion axes match to tritan 1.1° / deutan 9.3° / protan 12.1°.
+- **Engineering metrics human-validated.** `research/metric_predictivity.py`
+  correlates each engineering metric against the human_pool property it claims
+  to measure, across 9 spaces. Finding: chromatic-gradient-CV predicts human
+  discrimination (ρ +0.62); the CIELab-reference `tint_shade_hue` *anti*-
+  correlates with human hue (ρ −0.92), empirically vindicating dropping the
+  CIELab-reference tier. See `research/METRIC_PREDICTIVITY_FINDINGS.md`.
+- **Runs from a pip install.** `core/data.py` resolves data centrally (env var →
+  dev checkout → `~/.cache/colorbench`, auto-downloaded from GitHub), so an
+  outsider no longer needs the exact sibling checkout. The 39 unscored `user_*`
+  application scenarios are segregated under `_application_scenarios` (never in
+  the verdict).
+
 ## The fairness / verdict layer (`core/`)
 
 These modules turn a raw comparison into a verdict you can trust:
@@ -117,7 +149,7 @@ These modules turn a raw comparison into a verdict you can trust:
 | Module | Role |
 |--------|------|
 | `judge_provenance.py` | Tags each of the 94 metrics by **who judges it** — human-psychophysical / structural / human-fit-ruler / CIELab-reference / heuristic-proxy — and reports W-L-T split by tier (ceiling-bound and arbitrary-target tiers flagged, never in the headline). |
-| `human_pool.py` | **Best-of-breed human panel.** Grounds each property in the curated [`color-perception-datasets`](https://github.com/Grkmyldz148/color-perception-datasets) pool — 24 datasets wired as of 2026-07: JND ellipses (MacAdam 1942, Luo-Rigg, Alder, Hong 2025 with measured-primaries colorimetry), 3D ellipsoids (Koenderink 2026, Brown 1957, Brown-MacAdam 1949, Wyszecki-Fielder 1971), Lab-ellipsoids (Huang 2012), tolerance vectors (RIT-DuPont/Berns 1991), constant-hue loci (Hung-Berns, Ebner-Fairchild, Munsell), unique hues (Xiao 2011), **OSA-UCS uniform spacing (558-sample committee atlas — the independent, non-Munsell spacing anchor)**, H-K (Sanders-Wyszecki, Wyszecki 1967, Zhang aperture + Fairchild-Pirrotta 1991 object-colour), CAT, WCS naming & Asano observer-metamerism (diagnostic). 15 schema-aware judges, each validated (gray-ramp + degenerate-space direction check) before entering the headline tier. |
+| `human_pool.py` | **Best-of-breed human panel.** Grounds each property in the curated [`color-perception-datasets`](https://github.com/Grkmyldz148/color-perception-datasets) pool — 24 datasets wired as of 2026-07: JND ellipses (MacAdam 1942, Luo-Rigg, Alder, Hong 2025 with measured-primaries colorimetry), 3D ellipsoids (Koenderink 2026, Brown 1957, Brown-MacAdam 1949, Wyszecki-Fielder 1971), Lab-ellipsoids (Huang 2012), tolerance vectors (RIT-DuPont/Berns 1991), constant-hue loci (Hung-Berns, Ebner-Fairchild, Munsell), unique hues (Xiao 2011), **OSA-UCS uniform spacing (558-sample committee atlas — the independent, non-Munsell spacing anchor)**, H-K (Sanders-Wyszecki, Wyszecki 1967, Zhang aperture + Fairchild-Pirrotta 1991 object-colour), CAT, WCS naming & Asano observer-metamerism (diagnostic). The pool ships **46 datasets total**, every one digit- or byte-verified against its primary source (incl. real CVD-observer ellipses, Regan-Reffin-Mollon 1994, used to validate the CVD simulation). 15 schema-aware judges, each validated (gray-ramp + degenerate-space direction check) before entering the headline tier. |
 | `fair_verdict.py` | Weighted W-L-T applying the 3 fixes above + folds in the human panel. `fair_verdict_full(space_a, space_b, comparison)`. |
 | `rulers.py` | Modular human-fit rulers (difference / threshold / spacing-consensus) — each property measured with the right instrument. |
 
