@@ -21,55 +21,52 @@ The site publishes at `https://grkmyldz148.github.io/colorbench/`.
 ## Board 1 — Measurement (color-difference prediction)
 
 "Which model best predicts human color difference?" Every entrant scores a
-**STRESS** on the real difference datasets using **its own ΔE** — so helmlab
-metricspace (a learned, non-Euclidean distance) competes head-to-head against
-CIEDE2000, CAM16-UCS, CIECAM02-UCS, DIN99, CIE94, CIELAB, OKLab, Jzazbz.
+**STRESS** on the real difference datasets using **its own ΔE** — helmlab
+metricspace (learned distance), the CIEDE2000 / CIE94 formulas, and every
+invertible colour-science space via its Euclidean ΔE (**23 models total**).
 
-| Column | Meaning |
+Columns: **BFD-P · Leeds · Witt · RIT-DuPont** (the four COMBVD components,
+possibly in-sample for the COMBVD-fit metricspace) · **MacAdam 74** (held-out) ·
+**Mean STRESS** · **Overfit Δrank** (helmlab only — the sole fitted model =
+held-out rank − mean in-sample rank) · **Rank swing** (worst − best rank over the
+5 sources). Hover any cell for its bootstrap **CI95**.
+
+The breakdown is honest: metricspace wins the mean but is carried by BFD-P (its
+training bulk); on the **held-out MacAdam 1974 it does not win** — CAM16-UCS does.
+
+## Board 2 — Generation (match to human vision)
+
+"Which space best matches human vision to generate color in?" Every invertible
+colour-science space + helmlab **genspace** (**21 spaces**), ranked on the
+**full validated human pool — 16 datasets in 5 categories**, each category
+weighing equally:
+
+| Category | Datasets |
 |---|---|
-| COMBVD | STRESS on COMBVD pairs (possible in-sample for the fitted metricspace) |
-| MacAdam 74 | STRESS on MacAdam 1974 (held-out fair test) |
-| Mean | mean of the two |
-| Overfit Δrank | ranks dropped from COMBVD → held-out MacAdam (+ = relatively better on the possible-training set; − = generalizes better held-out) |
+| Hue | Hung-Berns · Ebner-Fairchild · Munsell · Xiao |
+| Discrimination | MacAdam 1942 · Luo-Rigg · Alder · Regan · Hong |
+| 3-D discrimination | Koenderink · Brown 1957 · Wyszecki-Fielder · Brown-MacAdam |
+| Tolerance | RIT-DuPont · Huang |
+| Spacing | OSA-UCS |
 
-This board is deliberately **narrow** (two difference datasets). It is a
-difference-prediction snapshot, **not** a universal difference-model authority —
-a full ranking would add more pair sets, leave-one-dataset-out, and confidence
-intervals (that lives in `run.py metric` + the fair verdict, not this page).
-
-## Board 2 — Generation (color-synthesis geometry)
-
-"Which space is best to generate color in?" Invertible forward spaces, scored on
-synthesis geometry **broken down by gamut** (sRGB / Display-P3 / Rec2020), plus
-per-dataset human checks:
-
-| Group | Columns | Scored? |
-|---|---|---|
-| Hue · human data | Hung-Berns · Ebner-Fairchild · Munsell | ✅ |
-| Discrimination · human | MacAdam 1942 · Luo-Rigg · Regan 1994 | ✅ |
-| Spacing · human | OSA-UCS | ✅ |
-| Invertibility (gate) | round-trip max err (worst gamut) | diagnostic |
-| Gamut-map · CIELab-ref | ΔE-jump · hue-mono (worst gamut) | diagnostic |
-| Gradient · CIELab-ref | hue-drift° | diagnostic |
-| Generalization | Rank swing = worst − best rank over the 7 human datasets | — |
-
-**Overall rank is on HUMAN DATA only** — the three human categories (hue,
-discrimination, spacing), each weighing equally. The greyed engineering columns
-are **diagnostics, not scored**: round-trip is a pass/fail invertibility gate,
-and gamut-mapping / gradient are measured in CIELab (`core/metrics/gamut_mapping.py`
-uses `ciede2000` + CIELab hue). A CIELab-referenced ruler structurally flatters
-CIELAB and its transforms — the same *measure-CIELab-with-CIELab* circularity the
-fairness verdict zeroes out — so it must not drive the rank. (Letting it in put
-CIELAB *above* OKLab and genspace, which was the tell.) It is **deliberately not
-a single quality score**: no space is best at everything, and **Rank swing**
-makes that explicit — low = robust generalist, high = narrow specialist (the
-empirical fingerprint of overfitting).
+No CIELab-referenced engineering metric (gamut-mapping / gradient) is scored:
+`core/metrics/gamut_mapping.py` measures in CIELab (`ciede2000` + CIELab hue), a
+CIELab-referenced ruler that structurally flatters CIELAB and its transforms —
+the *measure-CIELab-with-CIELab* circularity the fairness verdict zeroes out.
+(Letting it in put CIELAB *above* OKLab and genspace, which was the tell.) The
+CAM-UCS family leads — those are appearance models fit to exactly this kind of
+data; **helmlab genspace sits mid-pack** (a hue-focused generation space, not a
+full uniformity model). **Rank swing** = worst − best rank over the 16 datasets;
+low = robust generalist, high = narrow specialist (the empirical fingerprint of
+overfitting).
 
 ## Scope
 
-A public snapshot for direction, trade-offs, and per-gamut anatomy — 8–9
-candidates, not the full literature pool. For a claim / paper / deploy decision,
-use `run.py` with the fair verdict (90 metrics, tiered provenance, contamination
-guard, paired-bootstrap ties) and the full `core.human_pool` (46 datasets).
-Colour-science spaces use their canonical reference implementations; helmlab is
-genspace v0.11.1 / metricspace v21.
+A comprehensive public snapshot: every invertible colour-science space + helmlab,
+on the full validated human pool. It is **not** the last word — it omits
+appearance conditioning (H-K, Abney), CVD-safety, and naming, and the engineering
+generation-quality axis (gamut/gradient) has no unbiased ruler yet. For a claim /
+paper / deploy decision, use `run.py` with the fair verdict (90 metrics, tiered
+provenance, contamination guard, paired-bootstrap ties). Colour-science spaces
+use their canonical reference implementations; helmlab is genspace v0.11.1 /
+metricspace v21.

@@ -3,8 +3,8 @@
   "boards": {
     "measurement": {
       "title": "Measurement \u2014 color-difference prediction",
-      "subtitle": "STRESS (+ CI95 on hover) on 5 independent difference sources, each model with its own \u0394E. Lower = closer to human. Overall = mean STRESS rank.",
-      "holdout_note": "The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample for the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check. Overfit \u0394rank (helmlab only \u2014 the others aren't fitted) = held-out rank \u2212 mean in-sample rank. metricspace = 0: it wins BFD-P (rank 1, the biggest component) but is only 6th on RIT-DuPont, averaging 3rd \u2014 the same as its held-out MacAdam rank, so NO relative overfit. Rank swing = worst\u2212best rank.",
+      "subtitle": "STRESS (+ CI95 on hover) on 5 independent difference sources, each model with its own \u0394E (metricspace = learned distance; CIEDE2000 / CIE94 = formulas; every colour-science space = Euclidean \u0394E). Lower = closer to human.",
+      "holdout_note": "The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample for the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check \u2014 where it does NOT win (CAM16-UCS does). Overfit \u0394rank (helmlab only) = held-out rank \u2212 mean in-sample rank. Rank swing = worst\u2212best rank across all 5 sources.",
       "groups": [
         {
           "label": "COMBVD components \u00b7 STRESS (possible in-sample)",
@@ -52,12 +52,12 @@
               "key": "overfit",
               "label": "Overfit \u0394rank",
               "signed": true,
-              "hint": "held-out \u2212 in-sample rank"
+              "hint": "helmlab only"
             },
             {
               "key": "gen_spread",
               "label": "Rank swing",
-              "hint": "worst\u2212best rank over 5 sources"
+              "hint": "worst\u2212best over 5 sources"
             }
           ]
         }
@@ -73,8 +73,8 @@
             "rit": 21.9,
             "macadam": 19.51,
             "mean": 23.2,
-            "overfit": 0,
-            "gen_spread": 5
+            "overfit": 2,
+            "gen_spread": 8
           },
           "ci": {
             "bfd": [
@@ -111,7 +111,7 @@
             "macadam": 22.13,
             "mean": 24.12,
             "overfit": null,
-            "gen_spread": 4
+            "gen_spread": 12
           },
           "ci": {
             "bfd": [
@@ -138,43 +138,6 @@
           "overall_rank": 2
         },
         {
-          "name": "CIECAM02-UCS",
-          "is_helm": false,
-          "scores": {
-            "bfd": 31.27,
-            "leeds": 24.65,
-            "witt": 30.58,
-            "rit": 20.38,
-            "macadam": 19.21,
-            "mean": 25.22,
-            "overfit": null,
-            "gen_spread": 2
-          },
-          "ci": {
-            "bfd": [
-              29.9,
-              32.7
-            ],
-            "leeds": [
-              22.4,
-              26.8
-            ],
-            "witt": [
-              28.2,
-              32.8
-            ],
-            "rit": [
-              18.5,
-              22.1
-            ],
-            "macadam": [
-              17.2,
-              21.1
-            ]
-          },
-          "overall_rank": 3
-        },
-        {
           "name": "CAM16-UCS",
           "is_helm": false,
           "scores": {
@@ -185,7 +148,7 @@
             "macadam": 18.71,
             "mean": 26.12,
             "overfit": null,
-            "gen_spread": 4
+            "gen_spread": 5
           },
           "ci": {
             "bfd": [
@@ -209,6 +172,43 @@
               20.8
             ]
           },
+          "overall_rank": 3
+        },
+        {
+          "name": "CAM02-UCS",
+          "is_helm": false,
+          "scores": {
+            "bfd": 34.07,
+            "leeds": 27.49,
+            "witt": 30.4,
+            "rit": 19.77,
+            "macadam": 19.0,
+            "mean": 26.15,
+            "overfit": null,
+            "gen_spread": 2
+          },
+          "ci": {
+            "bfd": [
+              32.8,
+              35.3
+            ],
+            "leeds": [
+              25.0,
+              29.9
+            ],
+            "witt": [
+              28.0,
+              32.5
+            ],
+            "rit": [
+              18.2,
+              21.2
+            ],
+            "macadam": [
+              16.9,
+              21.0
+            ]
+          },
           "overall_rank": 4
         },
         {
@@ -222,7 +222,7 @@
             "macadam": 19.78,
             "mean": 27.19,
             "overfit": null,
-            "gen_spread": 3
+            "gen_spread": 7
           },
           "ci": {
             "bfd": [
@@ -249,21 +249,169 @@
           "overall_rank": 5
         },
         {
-          "name": "DIN99",
+          "name": "CAM16-SCD",
           "is_helm": false,
           "scores": {
-            "bfd": 35.97,
-            "leeds": 29.77,
-            "witt": 34.2,
-            "rit": 21.89,
-            "macadam": 23.31,
-            "mean": 29.03,
+            "bfd": 36.03,
+            "leeds": 29.4,
+            "witt": 29.43,
+            "rit": 21.03,
+            "macadam": 20.97,
+            "mean": 27.37,
             "overfit": null,
-            "gen_spread": 1
+            "gen_spread": 7
           },
           "ci": {
             "bfd": [
-              34.4,
+              34.6,
+              37.4
+            ],
+            "leeds": [
+              27.0,
+              31.9
+            ],
+            "witt": [
+              27.2,
+              31.3
+            ],
+            "rit": [
+              19.3,
+              22.7
+            ],
+            "macadam": [
+              18.8,
+              23.2
+            ]
+          },
+          "overall_rank": 6
+        },
+        {
+          "name": "CAM02-SCD",
+          "is_helm": false,
+          "scores": {
+            "bfd": 36.26,
+            "leeds": 29.4,
+            "witt": 29.0,
+            "rit": 21.27,
+            "macadam": 21.33,
+            "mean": 27.45,
+            "overfit": null,
+            "gen_spread": 11
+          },
+          "ci": {
+            "bfd": [
+              34.9,
+              37.6
+            ],
+            "leeds": [
+              26.9,
+              31.9
+            ],
+            "witt": [
+              26.6,
+              31.1
+            ],
+            "rit": [
+              19.5,
+              22.9
+            ],
+            "macadam": [
+              19.1,
+              23.5
+            ]
+          },
+          "overall_rank": 7
+        },
+        {
+          "name": "CAM16-LCD",
+          "is_helm": false,
+          "scores": {
+            "bfd": 34.4,
+            "leeds": 28.4,
+            "witt": 37.72,
+            "rit": 20.96,
+            "macadam": 17.78,
+            "mean": 27.85,
+            "overfit": null,
+            "gen_spread": 9
+          },
+          "ci": {
+            "bfd": [
+              32.9,
+              36.0
+            ],
+            "leeds": [
+              26.0,
+              30.7
+            ],
+            "witt": [
+              35.1,
+              40.2
+            ],
+            "rit": [
+              19.3,
+              22.4
+            ],
+            "macadam": [
+              15.6,
+              19.8
+            ]
+          },
+          "overall_rank": 8
+        },
+        {
+          "name": "CAM02-LCD",
+          "is_helm": false,
+          "scores": {
+            "bfd": 34.4,
+            "leeds": 28.57,
+            "witt": 37.11,
+            "rit": 21.82,
+            "macadam": 17.85,
+            "mean": 27.95,
+            "overfit": null,
+            "gen_spread": 7
+          },
+          "ci": {
+            "bfd": [
+              33.1,
+              35.8
+            ],
+            "leeds": [
+              26.2,
+              30.8
+            ],
+            "witt": [
+              34.5,
+              39.6
+            ],
+            "rit": [
+              19.8,
+              23.8
+            ],
+            "macadam": [
+              15.9,
+              19.7
+            ]
+          },
+          "overall_rank": 9
+        },
+        {
+          "name": "DIN99",
+          "is_helm": false,
+          "scores": {
+            "bfd": 35.88,
+            "leeds": 29.82,
+            "witt": 34.24,
+            "rit": 21.93,
+            "macadam": 23.31,
+            "mean": 29.04,
+            "overfit": null,
+            "gen_spread": 7
+          },
+          "ci": {
+            "bfd": [
+              34.3,
               37.6
             ],
             "leeds": [
@@ -283,18 +431,240 @@
               26.3
             ]
           },
-          "overall_rank": 6
+          "overall_rank": 10
+        },
+        {
+          "name": "IPT (Ragoo)",
+          "is_helm": false,
+          "scores": {
+            "bfd": 39.92,
+            "leeds": 39.1,
+            "witt": 44.15,
+            "rit": 25.82,
+            "macadam": 19.02,
+            "mean": 33.6,
+            "overfit": null,
+            "gen_spread": 8
+          },
+          "ci": {
+            "bfd": [
+              38.6,
+              41.2
+            ],
+            "leeds": [
+              35.8,
+              42.1
+            ],
+            "witt": [
+              41.4,
+              46.7
+            ],
+            "rit": [
+              23.8,
+              27.7
+            ],
+            "macadam": [
+              16.8,
+              21.0
+            ]
+          },
+          "overall_rank": 11
+        },
+        {
+          "name": "ICaCb",
+          "is_helm": false,
+          "scores": {
+            "bfd": 39.14,
+            "leeds": 37.32,
+            "witt": 47.43,
+            "rit": 24.84,
+            "macadam": 21.2,
+            "mean": 33.99,
+            "overfit": null,
+            "gen_spread": 6
+          },
+          "ci": {
+            "bfd": [
+              37.8,
+              40.5
+            ],
+            "leeds": [
+              34.3,
+              40.0
+            ],
+            "witt": [
+              44.5,
+              50.1
+            ],
+            "rit": [
+              22.4,
+              27.3
+            ],
+            "macadam": [
+              18.5,
+              23.7
+            ]
+          },
+          "overall_rank": 12
+        },
+        {
+          "name": "sUCS",
+          "is_helm": false,
+          "scores": {
+            "bfd": 41.43,
+            "leeds": 39.81,
+            "witt": 44.99,
+            "rit": 28.08,
+            "macadam": 20.14,
+            "mean": 34.89,
+            "overfit": null,
+            "gen_spread": 8
+          },
+          "ci": {
+            "bfd": [
+              40.1,
+              42.8
+            ],
+            "leeds": [
+              36.5,
+              42.8
+            ],
+            "witt": [
+              42.1,
+              47.7
+            ],
+            "rit": [
+              25.6,
+              30.5
+            ],
+            "macadam": [
+              17.8,
+              22.3
+            ]
+          },
+          "overall_rank": 13
+        },
+        {
+          "name": "ICtCp",
+          "is_helm": false,
+          "scores": {
+            "bfd": 40.19,
+            "leeds": 37.36,
+            "witt": 49.33,
+            "rit": 27.68,
+            "macadam": 23.62,
+            "mean": 35.64,
+            "overfit": null,
+            "gen_spread": 6
+          },
+          "ci": {
+            "bfd": [
+              38.8,
+              41.6
+            ],
+            "leeds": [
+              34.4,
+              40.1
+            ],
+            "witt": [
+              46.3,
+              52.0
+            ],
+            "rit": [
+              23.8,
+              31.3
+            ],
+            "macadam": [
+              20.3,
+              26.6
+            ]
+          },
+          "overall_rank": 14
+        },
+        {
+          "name": "IPT",
+          "is_helm": false,
+          "scores": {
+            "bfd": 41.12,
+            "leeds": 39.88,
+            "witt": 46.54,
+            "rit": 29.54,
+            "macadam": 21.27,
+            "mean": 35.67,
+            "overfit": null,
+            "gen_spread": 5
+          },
+          "ci": {
+            "bfd": [
+              39.7,
+              42.6
+            ],
+            "leeds": [
+              36.7,
+              42.7
+            ],
+            "witt": [
+              43.6,
+              49.2
+            ],
+            "rit": [
+              26.5,
+              32.5
+            ],
+            "macadam": [
+              18.6,
+              23.7
+            ]
+          },
+          "overall_rank": 15
+        },
+        {
+          "name": "IgPgTg",
+          "is_helm": false,
+          "scores": {
+            "bfd": 46.16,
+            "leeds": 42.72,
+            "witt": 42.9,
+            "rit": 29.52,
+            "macadam": 23.16,
+            "mean": 36.89,
+            "overfit": null,
+            "gen_spread": 10
+          },
+          "ci": {
+            "bfd": [
+              44.3,
+              48.0
+            ],
+            "leeds": [
+              38.9,
+              46.2
+            ],
+            "witt": [
+              39.9,
+              45.5
+            ],
+            "rit": [
+              27.0,
+              31.7
+            ],
+            "macadam": [
+              20.7,
+              25.3
+            ]
+          },
+          "overall_rank": 16
         },
         {
           "name": "CIELAB",
           "is_helm": false,
           "scores": {
-            "bfd": 42.46,
-            "leeds": 40.09,
-            "witt": 51.71,
-            "rit": 33.42,
+            "bfd": 42.48,
+            "leeds": 40.11,
+            "witt": 51.72,
+            "rit": 33.44,
             "macadam": 24.53,
-            "mean": 38.44,
+            "mean": 38.46,
             "overfit": null,
             "gen_spread": 2
           },
@@ -320,7 +690,44 @@
               27.0
             ]
           },
-          "overall_rank": 7
+          "overall_rank": 17
+        },
+        {
+          "name": "ProLab",
+          "is_helm": false,
+          "scores": {
+            "bfd": 44.41,
+            "leeds": 39.38,
+            "witt": 51.83,
+            "rit": 30.2,
+            "macadam": 27.12,
+            "mean": 38.59,
+            "overfit": null,
+            "gen_spread": 6
+          },
+          "ci": {
+            "bfd": [
+              43.0,
+              45.8
+            ],
+            "leeds": [
+              36.2,
+              42.4
+            ],
+            "witt": [
+              49.3,
+              53.9
+            ],
+            "rit": [
+              27.8,
+              32.5
+            ],
+            "macadam": [
+              23.5,
+              30.1
+            ]
+          },
+          "overall_rank": 18
         },
         {
           "name": "Jzazbz",
@@ -333,7 +740,7 @@
             "macadam": 24.14,
             "mean": 39.34,
             "overfit": null,
-            "gen_spread": 2
+            "gen_spread": 7
           },
           "ci": {
             "bfd": [
@@ -357,7 +764,7 @@
               26.4
             ]
           },
-          "overall_rank": 8
+          "overall_rank": 19
         },
         {
           "name": "OKLab",
@@ -370,7 +777,7 @@
             "macadam": 32.72,
             "mean": 40.46,
             "overfit": null,
-            "gen_spread": 2
+            "gen_spread": 8
           },
           "ci": {
             "bfd": [
@@ -394,30 +801,145 @@
               35.0
             ]
           },
-          "overall_rank": 9
+          "overall_rank": 20
+        },
+        {
+          "name": "hdr-CIELAB",
+          "is_helm": false,
+          "scores": {
+            "bfd": 44.51,
+            "leeds": 42.13,
+            "witt": 55.25,
+            "rit": 36.54,
+            "macadam": 27.23,
+            "mean": 41.13,
+            "overfit": null,
+            "gen_spread": 4
+          },
+          "ci": {
+            "bfd": [
+              42.8,
+              46.2
+            ],
+            "leeds": [
+              39.3,
+              44.6
+            ],
+            "witt": [
+              52.4,
+              57.7
+            ],
+            "rit": [
+              30.5,
+              41.5
+            ],
+            "macadam": [
+              24.0,
+              30.0
+            ]
+          },
+          "overall_rank": 21
+        },
+        {
+          "name": "CIELUV",
+          "is_helm": false,
+          "scores": {
+            "bfd": 43.36,
+            "leeds": 48.33,
+            "witt": 53.17,
+            "rit": 36.56,
+            "macadam": 27.15,
+            "mean": 41.71,
+            "overfit": null,
+            "gen_spread": 4
+          },
+          "ci": {
+            "bfd": [
+              41.6,
+              45.1
+            ],
+            "leeds": [
+              45.6,
+              50.7
+            ],
+            "witt": [
+              49.8,
+              56.2
+            ],
+            "rit": [
+              33.7,
+              38.9
+            ],
+            "macadam": [
+              24.1,
+              29.7
+            ]
+          },
+          "overall_rank": 22
+        },
+        {
+          "name": "Yrg",
+          "is_helm": false,
+          "scores": {
+            "bfd": 61.1,
+            "leeds": 67.39,
+            "witt": 58.75,
+            "rit": 49.53,
+            "macadam": 51.07,
+            "mean": 57.57,
+            "overfit": null,
+            "gen_spread": 0
+          },
+          "ci": {
+            "bfd": [
+              58.6,
+              63.5
+            ],
+            "leeds": [
+              62.6,
+              71.0
+            ],
+            "witt": [
+              54.4,
+              62.4
+            ],
+            "rit": [
+              45.8,
+              52.5
+            ],
+            "macadam": [
+              38.8,
+              57.4
+            ]
+          },
+          "overall_rank": 23
         }
       ],
       "winner": "helmlab metricspace"
     },
     "generation": {
-      "title": "Generation \u2014 color-synthesis geometry",
-      "subtitle": "Ranked on HUMAN data only \u2014 hue (Hung-Berns/Ebner/Munsell), discrimination (MacAdam/Luo-Rigg/Regan), spacing (OSA-UCS), each category weighing equally. The engineering columns are diagnostics: round-trip is a pass/fail gate, and gamut-mapping / gradient are measured in CIELab (a CIELab-referenced ruler that would unfairly flatter CIELAB), so they don't drive the rank. Lower = better.",
+      "title": "Generation \u2014 match to human vision",
+      "subtitle": "Ranked on the FULL validated human pool \u2014 16 datasets in 5 categories (hue, discrimination, 3-D discrimination, tolerance, spacing), each category weighing equally. Lower = closer to human. No CIELab-referenced engineering metric is scored (that ruler flatters CIELAB). Rank swing low = robust generalist.",
       "groups": [
         {
           "label": "Hue \u00b7 human data",
           "scored": true,
           "metrics": [
             {
-              "key": "hue_hb",
+              "key": "hung_berns",
               "label": "Hung-Berns"
             },
             {
-              "key": "hue_ef",
+              "key": "ebner_fairchild",
               "label": "Ebner-F."
             },
             {
-              "key": "hue_mun",
+              "key": "munsell",
               "label": "Munsell"
+            },
+            {
+              "key": "xiao_unique_hues",
+              "label": "Xiao"
             }
           ]
         },
@@ -426,16 +948,60 @@
           "scored": true,
           "metrics": [
             {
-              "key": "disc_mac",
-              "label": "MacAdam"
+              "key": "macadam1942",
+              "label": "MacAdam42"
             },
             {
-              "key": "disc_lr",
+              "key": "luo_rigg_ellipses",
               "label": "Luo-Rigg"
             },
             {
-              "key": "disc_regan",
+              "key": "alder1982",
+              "label": "Alder"
+            },
+            {
+              "key": "regan_1994_cvd_ellipses",
               "label": "Regan"
+            },
+            {
+              "key": "hong_2025_ellipsoids",
+              "label": "Hong"
+            }
+          ]
+        },
+        {
+          "label": "3-D discrimination \u00b7 human",
+          "scored": true,
+          "metrics": [
+            {
+              "key": "koenderink_2026_3d_metric_field",
+              "label": "Koenderink"
+            },
+            {
+              "key": "brown_1957_12obs_ellipsoids",
+              "label": "Brown-57"
+            },
+            {
+              "key": "wyszecki_fielder_1971_ellipsoids",
+              "label": "Wyszecki-F"
+            },
+            {
+              "key": "brown_macadam_1949_ellipsoids",
+              "label": "Brown-MacAdam"
+            }
+          ]
+        },
+        {
+          "label": "Tolerance \u00b7 human",
+          "scored": true,
+          "metrics": [
+            {
+              "key": "berns_1991_rit_dupont_tolerance_vectors",
+              "label": "RIT-DuPont"
+            },
+            {
+              "key": "huang_2012_cielab_ellipses",
+              "label": "Huang"
             }
           ]
         },
@@ -444,46 +1010,8 @@
           "scored": true,
           "metrics": [
             {
-              "key": "sp_osa",
+              "key": "osa_ucs_1974",
               "label": "OSA-UCS"
-            }
-          ]
-        },
-        {
-          "label": "Invertibility (gate)",
-          "scored": false,
-          "metrics": [
-            {
-              "key": "rt_worst",
-              "label": "round-trip",
-              "hint": "worst gamut; all pass"
-            }
-          ]
-        },
-        {
-          "label": "Gamut-map \u00b7 CIELab-ref (diagnostic)",
-          "scored": false,
-          "metrics": [
-            {
-              "key": "gm_dj_worst",
-              "label": "\u0394E-jump",
-              "hint": "worst gamut; CIELab-referenced"
-            },
-            {
-              "key": "gm_mono_worst",
-              "label": "hue-mono",
-              "hint": "worst gamut; CIELab-referenced"
-            }
-          ]
-        },
-        {
-          "label": "Gradient \u00b7 CIELab-ref",
-          "scored": false,
-          "metrics": [
-            {
-              "key": "grad_drift",
-              "label": "hue-drift\u00b0",
-              "hint": "CIELab-referenced"
             }
           ]
         },
@@ -494,166 +1022,518 @@
             {
               "key": "gen_spread",
               "label": "Rank swing",
-              "hint": "worst\u2212best rank over 7 human datasets"
+              "hint": "worst\u2212best rank over 16 datasets"
             }
           ]
         }
       ],
       "spaces": [
         {
-          "name": "IPT",
+          "name": "CAM02-UCS",
           "is_helm": false,
           "scores": {
-            "grad_drift": 7.480397963063256,
-            "rt_worst": 1.6653345369377348e-15,
-            "gm_dj_worst": 2.5230607940065957,
-            "gm_mono_worst": 0.125,
-            "hue_hb": 4.966591017200263,
-            "hue_ef": 2.227078125866236,
-            "hue_mun": 3.3698860354636553,
-            "disc_mac": 0.20796329723562362,
-            "disc_lr": 0.22420811864173043,
-            "disc_regan": 0.18357455300426298,
-            "sp_osa": 0.07810386882207511,
-            "gen_spread": 7
+            "hung_berns": 5.276987238849141,
+            "ebner_fairchild": 2.5787140482895112,
+            "munsell": 3.4508129378399373,
+            "xiao_unique_hues": 2.086369379337148,
+            "macadam1942": 0.19768379211023018,
+            "luo_rigg_ellipses": 0.16332972056562595,
+            "alder1982": 0.16819201929250807,
+            "regan_1994_cvd_ellipses": 0.15363117334087606,
+            "hong_2025_ellipsoids": 0.14117858082418216,
+            "koenderink_2026_3d_metric_field": 0.18663473844628425,
+            "brown_1957_12obs_ellipsoids": 0.37082441981791037,
+            "wyszecki_fielder_1971_ellipsoids": 0.2419652585568205,
+            "brown_macadam_1949_ellipsoids": 0.28651379712150404,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.30530165072522886,
+            "huang_2012_cielab_ellipses": 0.20283907297907858,
+            "osa_ucs_1974": 0.08651599517741383,
+            "gen_spread": 12
           },
-          "overall_rank": 2.78
+          "overall_rank": 6.95
+        },
+        {
+          "name": "CAM02-LCD",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.276987238849141,
+            "ebner_fairchild": 2.578714048289512,
+            "munsell": 3.4508129378399373,
+            "xiao_unique_hues": 2.0863693793371474,
+            "macadam1942": 0.1961675583970866,
+            "luo_rigg_ellipses": 0.19004033757685027,
+            "alder1982": 0.18793282422254476,
+            "regan_1994_cvd_ellipses": 0.15848317614148305,
+            "hong_2025_ellipsoids": 0.1662435512486033,
+            "koenderink_2026_3d_metric_field": 0.16604944869310337,
+            "brown_1957_12obs_ellipsoids": 0.3820409899090318,
+            "wyszecki_fielder_1971_ellipsoids": 0.25147348353755,
+            "brown_macadam_1949_ellipsoids": 0.3424145765647917,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.2938602494775003,
+            "huang_2012_cielab_ellipses": 0.21981426585538624,
+            "osa_ucs_1974": 0.0815569425299456,
+            "gen_spread": 12
+          },
+          "overall_rank": 7.2
+        },
+        {
+          "name": "CAM16-LCD",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.657378596098273,
+            "ebner_fairchild": 2.864113798091773,
+            "munsell": 3.489582554198887,
+            "xiao_unique_hues": 2.231287507218026,
+            "macadam1942": 0.22252371601375565,
+            "luo_rigg_ellipses": 0.18430891855438816,
+            "alder1982": 0.16479038854847813,
+            "regan_1994_cvd_ellipses": 0.1535492215494486,
+            "hong_2025_ellipsoids": 0.17409921851608703,
+            "koenderink_2026_3d_metric_field": 0.18072037704934318,
+            "brown_1957_12obs_ellipsoids": 0.4147403174226741,
+            "wyszecki_fielder_1971_ellipsoids": 0.2205777272947548,
+            "brown_macadam_1949_ellipsoids": 0.3365868835438776,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.2951867077868469,
+            "huang_2012_cielab_ellipses": 0.20232236946749924,
+            "osa_ucs_1974": 0.08105668070577621,
+            "gen_spread": 16
+          },
+          "overall_rank": 7.2
+        },
+        {
+          "name": "IPT (Ragoo)",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.018455632612027,
+            "ebner_fairchild": 2.425464000708459,
+            "munsell": 3.2908047674179115,
+            "xiao_unique_hues": 1.9137377508272935,
+            "macadam1942": 0.23770387297820633,
+            "luo_rigg_ellipses": 0.20403096144257127,
+            "alder1982": 0.2024479361959556,
+            "regan_1994_cvd_ellipses": 0.1555452601001517,
+            "hong_2025_ellipsoids": 0.20328297548014201,
+            "koenderink_2026_3d_metric_field": 0.2033137684851885,
+            "brown_1957_12obs_ellipsoids": 0.5829392740776124,
+            "wyszecki_fielder_1971_ellipsoids": 0.2489005665698174,
+            "brown_macadam_1949_ellipsoids": 0.4833325589376595,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.31393156497744656,
+            "huang_2012_cielab_ellipses": 0.2057525567880874,
+            "osa_ucs_1974": 0.06458022953734804,
+            "gen_spread": 18
+          },
+          "overall_rank": 7.46
         },
         {
           "name": "CAM16-UCS",
           "is_helm": false,
           "scores": {
-            "grad_drift": 5.8645348819341585,
-            "rt_worst": 4.3298697960381105e-15,
-            "gm_dj_worst": null,
-            "gm_mono_worst": null,
-            "hue_hb": 5.495694057870175,
-            "hue_ef": 2.578970863815391,
-            "hue_mun": 3.336452444787599,
-            "disc_mac": 0.20580123397128475,
-            "disc_lr": 0.15533147911543554,
-            "disc_regan": 0.1355540632863844,
-            "sp_osa": 0.09505284512614966,
-            "gen_spread": 5
+            "hung_berns": 5.6573785960982725,
+            "ebner_fairchild": 2.864113798091773,
+            "munsell": 3.489582554198887,
+            "xiao_unique_hues": 2.2312875072180285,
+            "macadam1942": 0.20786162738703481,
+            "luo_rigg_ellipses": 0.15914993793159626,
+            "alder1982": 0.1496423000340015,
+            "regan_1994_cvd_ellipses": 0.13686166396376864,
+            "hong_2025_ellipsoids": 0.15012702815988974,
+            "koenderink_2026_3d_metric_field": 0.19343069876347252,
+            "brown_1957_12obs_ellipsoids": 0.393180172805652,
+            "wyszecki_fielder_1971_ellipsoids": 0.2237112469321048,
+            "brown_macadam_1949_ellipsoids": 0.30223786431147204,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.3088632351385558,
+            "huang_2012_cielab_ellipses": 0.19179443956906858,
+            "osa_ucs_1974": 0.08396719392398659,
+            "gen_spread": 18
           },
-          "overall_rank": 3.67
+          "overall_rank": 7.51
         },
         {
-          "name": "Jzazbz",
+          "name": "ICaCb",
           "is_helm": false,
           "scores": {
-            "grad_drift": 7.395849108812536,
-            "rt_worst": 2.345901251032956e-13,
-            "gm_dj_worst": 44.65480752011101,
-            "gm_mono_worst": 5.75,
-            "hue_hb": 5.057765435929416,
-            "hue_ef": 2.262584346890956,
-            "hue_mun": 3.4846949851446554,
-            "disc_mac": 0.2231080016099421,
-            "disc_lr": 0.21162700848445978,
-            "disc_regan": 0.2000224316600138,
-            "sp_osa": 0.0929023288803691,
-            "gen_spread": 3
+            "hung_berns": 5.0442728498948055,
+            "ebner_fairchild": 2.425692255567714,
+            "munsell": 3.5347273281564164,
+            "xiao_unique_hues": 1.7507898028033728,
+            "macadam1942": 0.22552652399246814,
+            "luo_rigg_ellipses": 0.21103584947652368,
+            "alder1982": 0.23423582528545608,
+            "regan_1994_cvd_ellipses": 0.195034482565916,
+            "hong_2025_ellipsoids": 0.2172957800195369,
+            "koenderink_2026_3d_metric_field": 0.19432566564872156,
+            "brown_1957_12obs_ellipsoids": 0.4638055827309722,
+            "wyszecki_fielder_1971_ellipsoids": 0.23240631605823556,
+            "brown_macadam_1949_ellipsoids": 0.4117031869754075,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.3065439039969759,
+            "huang_2012_cielab_ellipses": 0.22746845071377533,
+            "osa_ucs_1974": 0.07145951674474123,
+            "gen_spread": 16
           },
-          "overall_rank": 4.33
+          "overall_rank": 8.44
         },
         {
-          "name": "helmlab genspace",
-          "is_helm": true,
-          "scores": {
-            "grad_drift": 7.232500705408699,
-            "rt_worst": 1.887379141862766e-15,
-            "gm_dj_worst": 2.689390488048692,
-            "gm_mono_worst": 0.375,
-            "hue_hb": 4.781404407690748,
-            "hue_ef": 2.14710354583463,
-            "hue_mun": 3.365568867391152,
-            "disc_mac": 0.2543094287291686,
-            "disc_lr": 0.18888102812759047,
-            "disc_regan": 0.19535788498708992,
-            "sp_osa": 0.14843055615223416,
-            "gen_spread": 6
-          },
-          "overall_rank": 4.44
-        },
-        {
-          "name": "OKLab",
+          "name": "sUCS",
           "is_helm": false,
           "scores": {
-            "grad_drift": 7.374368220522534,
-            "rt_worst": 1.7763568394002505e-15,
-            "gm_dj_worst": 3.0473822264754302,
-            "gm_mono_worst": 0.625,
-            "hue_hb": 5.039942148519675,
-            "hue_ef": 2.26484765842224,
-            "hue_mun": 3.255785987779525,
-            "disc_mac": 0.24143944004641596,
-            "disc_lr": 0.20103206243524688,
-            "disc_regan": 0.1497319404929961,
-            "sp_osa": 0.21240842410563332,
-            "gen_spread": 7
+            "hung_berns": 5.011080300678782,
+            "ebner_fairchild": 2.264892297717506,
+            "munsell": 3.3431651888743006,
+            "xiao_unique_hues": 1.9477115883766916,
+            "macadam1942": 0.20633939374589033,
+            "luo_rigg_ellipses": 0.21842261191418086,
+            "alder1982": 0.22119401100492794,
+            "regan_1994_cvd_ellipses": 0.15193273990680992,
+            "hong_2025_ellipsoids": 0.19484979837845992,
+            "koenderink_2026_3d_metric_field": 0.17634940346312333,
+            "brown_1957_12obs_ellipsoids": 0.5815270010908768,
+            "wyszecki_fielder_1971_ellipsoids": 0.2699621769957939,
+            "brown_macadam_1949_ellipsoids": 0.46266859682315786,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.30511258809223335,
+            "huang_2012_cielab_ellipses": 0.22330376665739904,
+            "osa_ucs_1974": 0.08297408795605073,
+            "gen_spread": 15
           },
-          "overall_rank": 4.89
+          "overall_rank": 8.76
         },
         {
-          "name": "DIN99d",
+          "name": "IPT",
           "is_helm": false,
           "scores": {
-            "grad_drift": 5.466673383868616,
-            "rt_worst": 2.7755575615628914e-15,
-            "gm_dj_worst": 0.755801204092315,
-            "gm_mono_worst": 0.0,
-            "hue_hb": 5.87514174515184,
-            "hue_ef": 2.5938217550147633,
-            "hue_mun": 3.595516767051572,
-            "disc_mac": 0.23919524814864576,
-            "disc_lr": 0.14316114066634206,
-            "disc_regan": 0.1403066544768195,
-            "sp_osa": 0.1146039926068829,
-            "gen_spread": 6
+            "hung_berns": 4.966789195101549,
+            "ebner_fairchild": 2.225091769617816,
+            "munsell": 3.371045525017376,
+            "xiao_unique_hues": 1.7443577543015307,
+            "macadam1942": 0.2079633600356875,
+            "luo_rigg_ellipses": 0.22420820503786137,
+            "alder1982": 0.24448925591155898,
+            "regan_1994_cvd_ellipses": 0.18357504066279384,
+            "hong_2025_ellipsoids": 0.2063485148035236,
+            "koenderink_2026_3d_metric_field": 0.17402391012087914,
+            "brown_1957_12obs_ellipsoids": 0.5731416531613112,
+            "wyszecki_fielder_1971_ellipsoids": 0.2709398548901384,
+            "brown_macadam_1949_ellipsoids": 0.4757231673723683,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.30805041163615127,
+            "huang_2012_cielab_ellipses": 0.24608691106132258,
+            "osa_ucs_1974": 0.07810234016902777,
+            "gen_spread": 18
           },
-          "overall_rank": 5.0
+          "overall_rank": 8.92
         },
         {
-          "name": "CIELAB",
+          "name": "CAM16-SCD",
           "is_helm": false,
           "scores": {
-            "grad_drift": 7.655282344044914,
-            "rt_worst": 1.1102230246251565e-15,
-            "gm_dj_worst": 0.7917217650799573,
-            "gm_mono_worst": 0.0,
-            "hue_hb": 6.021736399920818,
-            "hue_ef": 2.9983388830594175,
-            "hue_mun": 3.9273930924322427,
-            "disc_mac": 0.2933802620460358,
-            "disc_lr": 0.20824624699925232,
-            "disc_regan": 0.23341275472174008,
-            "sp_osa": 0.07928155319806417,
-            "gen_spread": 6
+            "hung_berns": 5.6573785960982725,
+            "ebner_fairchild": 2.8641137980917732,
+            "munsell": 3.489582554198887,
+            "xiao_unique_hues": 2.231287507218027,
+            "macadam1942": 0.20918508607719472,
+            "luo_rigg_ellipses": 0.15037625448072187,
+            "alder1982": 0.1473871038507236,
+            "regan_1994_cvd_ellipses": 0.13527183961772213,
+            "hong_2025_ellipsoids": 0.13934593314953467,
+            "koenderink_2026_3d_metric_field": 0.21915572067289468,
+            "brown_1957_12obs_ellipsoids": 0.40591080242940547,
+            "wyszecki_fielder_1971_ellipsoids": 0.24195225432332715,
+            "brown_macadam_1949_ellipsoids": 0.30867664415629525,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.32758449608956985,
+            "huang_2012_cielab_ellipses": 0.1980842341618866,
+            "osa_ucs_1974": 0.09055300485238339,
+            "gen_spread": 17
           },
-          "overall_rank": 5.44
+          "overall_rank": 8.96
+        },
+        {
+          "name": "CAM02-SCD",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.276987238849141,
+            "ebner_fairchild": 2.5787140482895117,
+            "munsell": 3.4508129378399373,
+            "xiao_unique_hues": 2.08636937933715,
+            "macadam1942": 0.20618739924729365,
+            "luo_rigg_ellipses": 0.15274464989819952,
+            "alder1982": 0.1609929399747927,
+            "regan_1994_cvd_ellipses": 0.15618434398638364,
+            "hong_2025_ellipsoids": 0.13160942418891652,
+            "koenderink_2026_3d_metric_field": 0.21430963611372422,
+            "brown_1957_12obs_ellipsoids": 0.38880437770101955,
+            "wyszecki_fielder_1971_ellipsoids": 0.2526739900864,
+            "brown_macadam_1949_ellipsoids": 0.28717500114732014,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.3244278182681516,
+            "huang_2012_cielab_ellipses": 0.20527400862969936,
+            "osa_ucs_1974": 0.09365164369407467,
+            "gen_spread": 13
+          },
+          "overall_rank": 8.98
+        },
+        {
+          "name": "DIN99",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 6.375169832883306,
+            "ebner_fairchild": 3.170769452354976,
+            "munsell": 3.822883006408648,
+            "xiao_unique_hues": 2.09213621280014,
+            "macadam1942": 0.23596304813677052,
+            "luo_rigg_ellipses": 0.16915300822768276,
+            "alder1982": 0.1580008175344029,
+            "regan_1994_cvd_ellipses": 0.12799826941495301,
+            "hong_2025_ellipsoids": 0.14124002603208324,
+            "koenderink_2026_3d_metric_field": 0.21334124400736224,
+            "brown_1957_12obs_ellipsoids": 0.34852476922327835,
+            "wyszecki_fielder_1971_ellipsoids": 0.22419771627173737,
+            "brown_macadam_1949_ellipsoids": 0.3013585012715178,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.32414923401039475,
+            "huang_2012_cielab_ellipses": 0.19685242087097057,
+            "osa_ucs_1974": 0.09101505015330459,
+            "gen_spread": 20
+          },
+          "overall_rank": 9.39
+        },
+        {
+          "name": "ProLab",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.5753438775817274,
+            "ebner_fairchild": 3.0679854912101976,
+            "munsell": 3.761355207805731,
+            "xiao_unique_hues": 1.9761986787294092,
+            "macadam1942": 0.25153314491233103,
+            "luo_rigg_ellipses": 0.21886470504168895,
+            "alder1982": 0.2031967928530756,
+            "regan_1994_cvd_ellipses": 0.12476411976159604,
+            "hong_2025_ellipsoids": 0.2006240116264048,
+            "koenderink_2026_3d_metric_field": 0.22230453068296407,
+            "brown_1957_12obs_ellipsoids": 0.3618004586290663,
+            "wyszecki_fielder_1971_ellipsoids": 0.2841159836050689,
+            "brown_macadam_1949_ellipsoids": 0.3608166487038597,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.37694768215729635,
+            "huang_2012_cielab_ellipses": 0.21803147352597532,
+            "osa_ucs_1974": 0.07391531732025909,
+            "gen_spread": 18
+          },
+          "overall_rank": 10.71
         },
         {
           "name": "ICtCp",
           "is_helm": false,
           "scores": {
-            "grad_drift": 7.304450591636726,
-            "rt_worst": 3.319566843629218e-13,
-            "gm_dj_worst": 15.076453986038999,
-            "gm_mono_worst": 2.5,
-            "hue_hb": 5.247619026532908,
-            "hue_ef": 2.485241057795796,
-            "hue_mun": 3.9905441186086046,
-            "disc_mac": 0.26975736391180677,
-            "disc_lr": 0.2228424175262727,
-            "disc_regan": 0.27220301284727694,
-            "sp_osa": 0.08241828763463882,
-            "gen_spread": 5
+            "hung_berns": 5.160798326378271,
+            "ebner_fairchild": 2.485084793734927,
+            "munsell": 3.7486197078313737,
+            "xiao_unique_hues": 1.8131800365290154,
+            "macadam1942": 0.272571651218609,
+            "luo_rigg_ellipses": 0.2162307927623158,
+            "alder1982": 0.245534858524695,
+            "regan_1994_cvd_ellipses": 0.25598413356858224,
+            "hong_2025_ellipsoids": 0.25069187509652796,
+            "koenderink_2026_3d_metric_field": 0.22642742003097346,
+            "brown_1957_12obs_ellipsoids": 0.4468994561524235,
+            "wyszecki_fielder_1971_ellipsoids": 0.24684332823041433,
+            "brown_macadam_1949_ellipsoids": 0.411487329666912,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.3216134169721864,
+            "huang_2012_cielab_ellipses": 0.24963465684912145,
+            "osa_ucs_1974": 0.07386803104815794,
+            "gen_spread": 18
           },
-          "overall_rank": 5.44
+          "overall_rank": 10.93
+        },
+        {
+          "name": "helmlab genspace",
+          "is_helm": true,
+          "scores": {
+            "hung_berns": 4.781404407690748,
+            "ebner_fairchild": 2.14710354583463,
+            "munsell": 3.365568867391152,
+            "xiao_unique_hues": 1.860597140839642,
+            "macadam1942": 0.2543094287291686,
+            "luo_rigg_ellipses": 0.18888102812759047,
+            "alder1982": 0.2056213402586822,
+            "regan_1994_cvd_ellipses": 0.19535788498708992,
+            "hong_2025_ellipsoids": 0.21695624712399408,
+            "koenderink_2026_3d_metric_field": 0.219423160708306,
+            "brown_1957_12obs_ellipsoids": 0.45672488327114635,
+            "wyszecki_fielder_1971_ellipsoids": 0.27520548836684083,
+            "brown_macadam_1949_ellipsoids": 0.38026131163391125,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.3715282592449611,
+            "huang_2012_cielab_ellipses": 0.21352015787302403,
+            "osa_ucs_1974": 0.14843055615223416,
+            "gen_spread": 18
+          },
+          "overall_rank": 11.98
+        },
+        {
+          "name": "OKLab",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.04376391218755,
+            "ebner_fairchild": 2.2656691736318937,
+            "munsell": 3.2513717378310245,
+            "xiao_unique_hues": 2.13437798551677,
+            "macadam1942": 0.24145242569209147,
+            "luo_rigg_ellipses": 0.20102071206478633,
+            "alder1982": 0.19217775874659782,
+            "regan_1994_cvd_ellipses": 0.1497630961995314,
+            "hong_2025_ellipsoids": 0.2039588243450811,
+            "koenderink_2026_3d_metric_field": 0.252382624779306,
+            "brown_1957_12obs_ellipsoids": 0.5521513355939488,
+            "wyszecki_fielder_1971_ellipsoids": 0.32531505082067624,
+            "brown_macadam_1949_ellipsoids": 0.3844473340516875,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.4248870311034157,
+            "huang_2012_cielab_ellipses": 0.23253885418281484,
+            "osa_ucs_1974": 0.21239396234252803,
+            "gen_spread": 19
+          },
+          "overall_rank": 13.75
+        },
+        {
+          "name": "CIELAB",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 6.019778466184093,
+            "ebner_fairchild": 2.997651461225197,
+            "munsell": 3.9289546543960276,
+            "xiao_unique_hues": 1.9361928796870402,
+            "macadam1942": 0.2933772606371648,
+            "luo_rigg_ellipses": 0.20824676560425176,
+            "alder1982": 0.2123201961050054,
+            "regan_1994_cvd_ellipses": 0.2334008753962243,
+            "hong_2025_ellipsoids": 0.22815729328447107,
+            "koenderink_2026_3d_metric_field": 0.2621764927456429,
+            "brown_1957_12obs_ellipsoids": 0.5320767890078356,
+            "wyszecki_fielder_1971_ellipsoids": 0.2788863416376798,
+            "brown_macadam_1949_ellipsoids": 0.47731157668290825,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.33378632094160265,
+            "huang_2012_cielab_ellipses": 0.2759624705780989,
+            "osa_ucs_1974": 0.07928743860759922,
+            "gen_spread": 14
+          },
+          "overall_rank": 13.88
+        },
+        {
+          "name": "Jzazbz",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.191025046777316,
+            "ebner_fairchild": 2.4977231346634854,
+            "munsell": 3.476952700352264,
+            "xiao_unique_hues": 1.7455998729570736,
+            "macadam1942": 0.22437755237869822,
+            "luo_rigg_ellipses": 0.21655551453211982,
+            "alder1982": 0.24023431873258727,
+            "regan_1994_cvd_ellipses": 0.1856587047271005,
+            "hong_2025_ellipsoids": 0.21557634258878014,
+            "koenderink_2026_3d_metric_field": 0.2631961591758474,
+            "brown_1957_12obs_ellipsoids": 0.6443651901914138,
+            "wyszecki_fielder_1971_ellipsoids": 0.295616064642989,
+            "brown_macadam_1949_ellipsoids": 0.5376047233702739,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.31723309603581523,
+            "huang_2012_cielab_ellipses": 0.29297647452914466,
+            "osa_ucs_1974": 0.1072489500296462,
+            "gen_spread": 18
+          },
+          "overall_rank": 14.12
+        },
+        {
+          "name": "CIELUV",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.4150392980198925,
+            "ebner_fairchild": 2.896066236410251,
+            "munsell": 3.7382114616175897,
+            "xiao_unique_hues": 1.7259032743501983,
+            "macadam1942": 0.2325205977224967,
+            "luo_rigg_ellipses": 0.2261383111115179,
+            "alder1982": 0.22470315348335615,
+            "regan_1994_cvd_ellipses": 0.14872200800089502,
+            "hong_2025_ellipsoids": 0.20316382602209063,
+            "koenderink_2026_3d_metric_field": 0.2844481765052125,
+            "brown_1957_12obs_ellipsoids": 0.5812530929587566,
+            "wyszecki_fielder_1971_ellipsoids": 0.29807311199323033,
+            "brown_macadam_1949_ellipsoids": 0.48979829104707473,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.3321602709230376,
+            "huang_2012_cielab_ellipses": 0.2903245999865637,
+            "osa_ucs_1974": 0.12468240354635506,
+            "gen_spread": 20
+          },
+          "overall_rank": 15.05
+        },
+        {
+          "name": "IgPgTg",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 5.761308749317675,
+            "ebner_fairchild": 2.7629503534701745,
+            "munsell": 4.317844106406371,
+            "xiao_unique_hues": 2.780843609509653,
+            "macadam1942": 0.26129464121876816,
+            "luo_rigg_ellipses": 0.21064295664020688,
+            "alder1982": 0.2154044580044453,
+            "regan_1994_cvd_ellipses": 0.2042035896170627,
+            "hong_2025_ellipsoids": 0.2171941173029024,
+            "koenderink_2026_3d_metric_field": 0.20455639054985447,
+            "brown_1957_12obs_ellipsoids": 0.5953972186586611,
+            "wyszecki_fielder_1971_ellipsoids": 0.30526887829039273,
+            "brown_macadam_1949_ellipsoids": 0.45178196591242736,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.36208313365116274,
+            "huang_2012_cielab_ellipses": 0.21795792697018607,
+            "osa_ucs_1974": 0.13986074799363504,
+            "gen_spread": 12
+          },
+          "overall_rank": 15.96
+        },
+        {
+          "name": "hdr-CIELAB",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 6.134804523904439,
+            "ebner_fairchild": 3.200562943311562,
+            "munsell": 4.14268665713297,
+            "xiao_unique_hues": 2.073121125879766,
+            "macadam1942": 0.3012368239799912,
+            "luo_rigg_ellipses": 0.20937894806773727,
+            "alder1982": 0.21589611369501055,
+            "regan_1994_cvd_ellipses": 0.24028435295855166,
+            "hong_2025_ellipsoids": 0.23259615842496636,
+            "koenderink_2026_3d_metric_field": 0.27515731867820364,
+            "brown_1957_12obs_ellipsoids": 0.4651992573278695,
+            "wyszecki_fielder_1971_ellipsoids": 0.30330506279731173,
+            "brown_macadam_1949_ellipsoids": 0.4617279282447762,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.35141477526326076,
+            "huang_2012_cielab_ellipses": 0.3001779100612915,
+            "osa_ucs_1974": 0.0990209255196623,
+            "gen_spread": 10
+          },
+          "overall_rank": 16.92
+        },
+        {
+          "name": "Yrg",
+          "is_helm": false,
+          "scores": {
+            "hung_berns": 3.3832935451051536,
+            "ebner_fairchild": 3.910474658005392,
+            "munsell": 6.330387818366008,
+            "xiao_unique_hues": 2.6192995563884223,
+            "macadam1942": 0.2648400793253904,
+            "luo_rigg_ellipses": 0.21661971176385875,
+            "alder1982": 0.2062717692525085,
+            "regan_1994_cvd_ellipses": 0.1415400387801745,
+            "hong_2025_ellipsoids": 0.21683211884751216,
+            "koenderink_2026_3d_metric_field": 0.34313605181957235,
+            "brown_1957_12obs_ellipsoids": 0.8653740065202283,
+            "wyszecki_fielder_1971_ellipsoids": 0.332496117972591,
+            "brown_macadam_1949_ellipsoids": 0.4482794198346873,
+            "berns_1991_rit_dupont_tolerance_vectors": 0.47483070618576934,
+            "huang_2012_cielab_ellipses": 0.29396082105873594,
+            "osa_ucs_1974": 0.3013371437963689,
+            "gen_spread": 20
+          },
+          "overall_rank": 17.93
         }
       ],
-      "winner": "IPT"
+      "winner": "CAM02-UCS"
     }
   }
 }

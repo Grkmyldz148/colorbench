@@ -44,24 +44,23 @@
      · human data from
      <a href="https://github.com/Grkmyldz148/color-perception-datasets">color-perception-datasets</a>
      · <span id="gen"></span></p>
-  <p class="method"><b>Measurement</b> = STRESS on 5 independent difference
-     sources — COMBVD unpacked into its components (BFD-P, Leeds, Witt,
-     RIT-DuPont) plus held-out MacAdam 1974 — each model scoring with its own ΔE;
-     hover a cell for its 95% CI. <b>Overfit Δrank</b> = held-out rank minus mean
-     in-sample rank (+ = relatively better where a model may have been fit).
-     <b>Generation</b> is ranked on <b>human data only</b> — hue
-     (Hung-Berns/Ebner/Munsell), discrimination (MacAdam/Luo-Rigg/Regan) and
-     spacing (OSA-UCS), each category weighing equally — because those are the
-     only columns measured with an unbiased ruler (real observers). The greyed
-     engineering columns are <b>diagnostics, not scored</b>: round-trip is a
-     pass/fail invertibility gate, and gamut-mapping / gradient are measured in
-     CIELab (a CIELab-referenced ruler that would structurally flatter CIELAB and
-     its transforms — the measure-CIELab-with-CIELab circularity the project
-     excludes from any verdict). <b>Rank swing</b> = worst minus best rank across
-     the 7 human datasets — low means a robust generalist, high means a narrow
-     specialist (the empirical fingerprint of overfitting). A dash means the
-     metric couldn't be measured. Colour-science spaces use their canonical
-     reference implementations.</p>
+  <p class="method"><b>Measurement</b> (23 models) = STRESS on 5 independent
+     difference sources — COMBVD unpacked into its components (BFD-P, Leeds, Witt,
+     RIT-DuPont) plus held-out MacAdam 1974 — each model scoring with its own ΔE
+     (metricspace = learned distance; CIEDE2000 / CIE94 = formulas; every
+     colour-science space = Euclidean ΔE); hover a cell for its 95% CI.
+     <b>Overfit Δrank</b> (helmlab only, since it's the one fitted model) =
+     held-out rank minus mean in-sample rank. <b>Generation</b> (21 spaces) is
+     ranked on the <b>full validated human pool</b> — 16 datasets across 5
+     categories: hue (Hung-Berns, Ebner-Fairchild, Munsell, Xiao), discrimination
+     (MacAdam 1942, Luo-Rigg, Alder, Regan, Hong), 3-D discrimination
+     (Koenderink, Brown 1957, Wyszecki-Fielder, Brown-MacAdam), tolerance
+     (RIT-DuPont, Huang) and spacing (OSA-UCS) — each category weighing equally.
+     No CIELab-referenced engineering metric (gamut-mapping / gradient) is scored:
+     that ruler structurally flatters CIELAB, so it is left off. <b>Rank swing</b>
+     = worst minus best rank across the datasets — low = robust generalist, high =
+     narrow specialist (the empirical fingerprint of overfitting). Colour-science
+     spaces use their canonical reference implementations.</p>
 </footer>
 
 <script src="leaderboard-data.js"></script>
