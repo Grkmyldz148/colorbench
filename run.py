@@ -510,7 +510,8 @@ def main():
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         default_json = os.path.join(repo_root, "research", "checkpoints", "metricspace_v21.json")
         metric_json = args.json or default_json
-        datasets_dir = os.path.join(repo_root, "datasets")
+        from core.data import baseline_dir
+        datasets_dir = baseline_dir()   # env / dev-layout / cache (auto-fetch)
         run_metric_evaluation(metric_json, datasets_dir, repo_root)
         return
 

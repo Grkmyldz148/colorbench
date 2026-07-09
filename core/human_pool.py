@@ -29,10 +29,19 @@ import numpy as np
 # ../../color-perception-datasets/datasets relative to this repo. No absolute
 # machine-specific fallback — pool_available()/pool_hint() give a clear message
 # instead of a silent empty panel.
-_SIBLING_POOL = os.path.normpath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
-    "color-perception-datasets", "datasets"))
-POOL_DIR = os.environ.get("COLOR_PERCEPTION_POOL", _SIBLING_POOL)
+def _resolve_pool():
+    # central resolver (env / sibling / cache with on-demand fetch), but never
+    # crash at import time — fall back to the sibling guess if resolution fails.
+    try:
+        from .data import pool_dir
+        return pool_dir(auto_fetch=False)
+    except Exception:
+        return os.path.normpath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..", "..",
+            "color-perception-datasets", "datasets"))
+
+
+POOL_DIR = _resolve_pool()
 
 
 def pool_available() -> bool:

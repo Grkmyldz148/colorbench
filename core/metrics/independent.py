@@ -20,10 +20,10 @@ _ILL_C_LIST = [0.98074, 1.0, 1.18232]
 
 
 def _datasets_dir():
-    """Path to datasets/ alongside colorbench/ (one extra `..` vs legacy
-    because metrics/ is now a subpackage of core/, not a sibling)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "..", "..", "..", "datasets")
+    """Baseline-data directory, resolved centrally (env / dev-layout / cache
+    with on-demand fetch). See core.data."""
+    from ..data import baseline_dir
+    return baseline_dir()
 
 
 def _load_json(relpath):
