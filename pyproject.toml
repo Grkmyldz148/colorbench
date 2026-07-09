@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "colorbench"
+version = "0.3.0"
+description = "A rigorous, self-auditing benchmark for perceptual color spaces — ranked on 46 real psychophysical datasets."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Görkem Yıldız" }]
+keywords = ["color", "colour", "color-space", "perceptual", "benchmark", "cielab", "oklab", "color-difference"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering",
+  "Intended Audience :: Science/Research",
+]
+dependencies = [
+  "numpy>=1.23",
+  "torch>=2.0",
+  "colour-science>=0.4.4",
+]
+
+[project.optional-dependencies]
+xlsx = ["openpyxl>=3.0"]      # COMBVD sub-dataset breakdown
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/Grkmyldz148/colorbench"
+Leaderboard = "https://grkmyldz148.github.io/colorbench/"
+Datasets = "https://github.com/Grkmyldz148/color-perception-datasets"
+
+[project.scripts]
+colorbench = "run:main"
+
+# Flat single-package repo: the package `colorbench` maps to this directory.
+# Internal modules use flat imports (`from core ...`, `from run ...`); core.data
+# and api.py insert the package dir on sys.path so those resolve whether run
+# from the checkout or an installed wheel. Data auto-downloads via core.data.
+[tool.setuptools]
+package-dir = { "colorbench" = "." }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.py", "*.json"]

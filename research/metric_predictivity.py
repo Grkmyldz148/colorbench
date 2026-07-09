@@ -24,9 +24,12 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# literature spaces buildable with no --json checkpoint
-SPACES = ["oklab", "cielab", "ipt", "jzazbz", "ictcp", "cam16ucs",
-          "din99d", "perceptia", "engineered"]
+# every built-in space that runs through run_test (all now .dtype-compatible)
+# + helmlab via its checkpoint — the run_test-compatible set that yields BOTH
+# the engineering metrics and the human_pool scores the correlation needs.
+SPACES = ["oklab", "oklab32", "cielab", "ipt", "jzazbz", "ictcp", "cam16ucs",
+          "din99d", "perceptia", "engineered", "substrate"]
+HELMLAB_CK = "/Volumes/harici_ssd/color-space/helmlab-main-repo/checkpoints/genspace_v0.11.1.json"
 
 # engineering metric (result_key, dot-path, lower_is_better) -> the human
 # property it is SUPPOSED to track. We validate each pairing.
@@ -57,9 +60,12 @@ def main():
 
     eng = {}     # space -> {(key,path): value}
     human = {}   # space -> {property: value}
-    for name in SPACES:
+    jobs = [(n, None) for n in SPACES] + [("genspace", HELMLAB_CK)]
+    for name, ck in jobs:
         try:
-            sp = build_space(name, None, device, dtype=dtype)
+            sp = build_space(name, ck, device, dtype=dtype)
+            if ck:
+                sp.name = "helmlab"
             print(f"  evaluating {sp.name} ...", flush=True)
             rep = run_test(sp, device, dname)
             panel = hp.evaluate_space_on_pool(sp, validated_only=True)["by_property"]
