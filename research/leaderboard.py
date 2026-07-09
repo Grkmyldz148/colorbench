@@ -70,55 +70,116 @@ def _generalization(rank, keys, name):
 
 
 # ───────────────────────── MEASUREMENT board ──────────────────────────────
+# STRESS (+ bootstrap CI95) on 5 INDEPENDENT difference sources — COMBVD is
+# unpacked into its real components (BFD-P, Leeds, Witt, RIT-DuPont) plus the
+# held-out MacAdam 1974 — each model scoring with its OWN ΔE. This turns the old
+# 2-dataset board into a real cross-source difference-model ranking with a
+# generalization / overfit read.
+MEAS_MODELS = ["helmlab metricspace", "CIEDE2000", "CIE94", "CIELAB", "DIN99",
+               "OKLab", "CAM16-UCS", "CIECAM02-UCS", "Jzazbz"]
+
+
+def _score_dataset(metric, x1, x2, wh, dv):
+    from core.metric_eval import (_ciede2000, _cie94_de, _cielab_de, _din99_de,
+                                  _oklab_de, _cam16_ucs_de, _ciecam02_ucs_de,
+                                  _jzazbz_de, _cat_to_d65, stress)
+    from core.bootstrap import stress_ci
+    x1, x2, wh, dv = np.asarray(x1), np.asarray(x2), np.asarray(wh), np.asarray(dv)
+    n = len(dv)
+    x1d = np.array([_cat_to_d65(x1[i], wh[i]) for i in range(n)])
+    x2d = np.array([_cat_to_d65(x2[i], wh[i]) for i in range(n)])
+    pp = lambda f: np.array([f(x1[i:i+1], x2[i:i+1], wh[i]) for i in range(n)]).ravel()
+    fns = {
+        "helmlab metricspace": lambda: metric.distance(x1d, x2d),
+        "CIEDE2000": lambda: pp(_ciede2000), "CIE94": lambda: pp(_cie94_de),
+        "CIELAB": lambda: pp(_cielab_de), "DIN99": lambda: pp(_din99_de),
+        "OKLab": lambda: _oklab_de(x1d, x2d), "CAM16-UCS": lambda: _cam16_ucs_de(x1d, x2d),
+        "CIECAM02-UCS": lambda: _ciecam02_ucs_de(x1d, x2d), "Jzazbz": lambda: _jzazbz_de(x1d, x2d),
+    }
+    out = {}
+    for name in MEAS_MODELS:
+        de = np.asarray(fns[name]()).ravel()
+        s = float(stress(de, dv))
+        lo, hi = stress_ci(de, dv)
+        out[name] = (round(s, 2), [round(float(lo), 1), round(float(hi), 1)])
+    return out
+
+
 def measurement_board():
     if HELM_SRC not in sys.path:
         sys.path.insert(0, HELM_SRC)
-    from core.metric_eval import run_metric_evaluation
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        r = run_metric_evaluation(HELMMETRIC, data.baseline_dir(), os.path.dirname(HELM_SRC))
-    combvd, macadam = r["COMBVD"], r["MacAdam1974"]
-    LABEL = {"MetricSpace": "helmlab metricspace", "CIE Lab": "CIELAB"}
-    models = sorted(set(combvd) | set(macadam))
-    rows = {}
-    for m in models:
-        c, a = combvd.get(m), macadam.get(m)
-        vals = [v for v in (c, a) if isinstance(v, (int, float))]
-        rows[LABEL.get(m, m)] = {
-            "is_helm": m == "MetricSpace",
-            "scores": {"combvd": c, "macadam": a,
-                       "mean": round(float(np.mean(vals)), 2) if vals else None},
-        }
-    dkeys = ["combvd", "macadam"]
+    from core.metric_eval import load_combvd_from_xlsx, load_macadam1974, _load_metric_space
+    base = data.baseline_dir()
+    metric = _load_metric_space(HELMMETRIC, os.path.dirname(HELM_SRC))
+
+    recs = load_combvd_from_xlsx(base)
+    def subset(pred):
+        r = [x for x in recs if pred(x["dataset"])]
+        return ([x["xyz1"] for x in r], [x["xyz2"] for x in r],
+                [x["white"] for x in r], [x["dv"] for x in r])
+    mx1, mx2, mw, mdv = load_macadam1974(base)
+    mac = (list(mx1), list(mx2), [mw] * len(mdv), list(mdv))
+
+    # 4 COMBVD components (possibly in-sample for the COMBVD-fit metricspace) +
+    # MacAdam 1974 (held-out). BFD-P's three illuminant variants merge into one.
+    DATASETS = [
+        ("bfd", "BFD-P", "in", subset(lambda s: s.startswith("BFD-P"))),
+        ("leeds", "Leeds", "in", subset(lambda s: s == "LEEDS")),
+        ("witt", "Witt", "in", subset(lambda s: s == "WITT")),
+        ("rit", "RIT-DuPont", "in", subset(lambda s: s == "RIT-DuPont")),
+        ("macadam", "MacAdam 74", "held", mac),
+    ]
+    dkeys = [d[0] for d in DATASETS]
+    in_keys = [d[0] for d in DATASETS if d[2] == "in"]
+
+    rows = {m: {"is_helm": m == "helmlab metricspace", "scores": {}, "ci": {}}
+            for m in MEAS_MODELS}
+    n_by = {}
+    for key, label, kind, (x1, x2, wh, dv) in DATASETS:
+        n_by[key] = len(dv)
+        print(f"  scoring {label} (n={len(dv)}) ...", flush=True)
+        res = _score_dataset(metric, x1, x2, wh, dv)
+        for m in MEAS_MODELS:
+            rows[m]["scores"][key], rows[m]["ci"][key] = res[m]
+
+    for m in MEAS_MODELS:
+        vals = [rows[m]["scores"][k] for k in dkeys]
+        rows[m]["scores"]["mean"] = round(float(np.mean(vals)), 2)
+
     rank = _ranks(rows, dkeys + ["mean"])
-    for n, v in rows.items():
-        # overfit signal: how many ranks the model DROPS from COMBVD (likely
-        # in-sample for the fitted metricspace) to held-out MacAdam. Positive =
-        # relatively better on the possible-training set.
-        rc, ra = rank["combvd"].get(n), rank["macadam"].get(n)
-        v["scores"]["overfit"] = (ra - rc) if (rc and ra) else None
-        v["overall_rank"] = rank["mean"].get(n)
-        v["ranks"] = {k: rank[k].get(n) for k in dkeys}
-    order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 99)
+    for m, v in rows.items():
+        # overfit Δrank: held-out MacAdam rank minus mean rank over the COMBVD
+        # components (the metricspace's possible training pool). + = relatively
+        # better on the possible-training data than on the held-out set.
+        r_in = np.mean([rank[k][m] for k in in_keys if m in rank.get(k, {})])
+        r_held = rank["macadam"].get(m)
+        v["scores"]["overfit"] = int(round(r_held - r_in)) if r_held else None
+        v["scores"]["gen_spread"] = _generalization(rank, dkeys, m)
+        v["overall_rank"] = rank["mean"].get(m)
+    order = sorted(rows, key=lambda m: rows[m]["overall_rank"] or 99)
+
     return {
         "title": "Measurement — color-difference prediction",
-        "subtitle": "STRESS on real difference datasets (each model's own ΔE). Lower = closer to human.",
-        "holdout_note": ("helmlab metricspace declares no training manifest, so COMBVD may be "
-                         "in-sample; MacAdam 1974 is a fair held-out test where it still ranks 3rd. "
-                         "The Overfit column = ranks dropped from COMBVD to held-out MacAdam "
-                         "(+ = relatively better on the possible-training set)."),
+        "subtitle": ("STRESS (+ CI95 on hover) on 5 independent difference sources, each model "
+                     "with its own ΔE. Lower = closer to human. Overall = mean STRESS rank."),
+        "holdout_note": ("The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample "
+                         "for the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check. "
+                         "Overfit Δrank = held-out rank − mean in-sample rank (+ = relatively better "
+                         "where it may have been fit). Rank swing = worst−best rank across all 5."),
         "groups": [
-            {"label": "Difference STRESS", "metrics": [
-                {"key": "combvd", "label": "COMBVD", "hint": "possible in-sample"},
-                {"key": "macadam", "label": "MacAdam 74", "hint": "held-out"},
-                {"key": "mean", "label": "Mean"}]},
+            {"label": "COMBVD components · STRESS (possible in-sample)", "metrics": [
+                {"key": "bfd", "label": f"BFD-P"}, {"key": "leeds", "label": "Leeds"},
+                {"key": "witt", "label": "Witt"}, {"key": "rit", "label": "RIT-DuPont"}]},
+            {"label": "Held-out", "metrics": [{"key": "macadam", "label": "MacAdam 74"}]},
+            {"label": "Composite", "metrics": [{"key": "mean", "label": "Mean STRESS"}]},
             {"label": "Generalization", "metrics": [
                 {"key": "overfit", "label": "Overfit Δrank", "signed": True,
-                 "hint": "COMBVD→MacAdam rank drop"}]},
+                 "hint": "held-out − in-sample rank"},
+                {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 5 sources"}]},
         ],
-        "spaces": [{"name": n, "is_helm": rows[n]["is_helm"],
-                    "scores": rows[n]["scores"], "overall_rank": rows[n]["overall_rank"]}
-                   for n in order],
+        "spaces": [{"name": m, "is_helm": rows[m]["is_helm"], "scores": rows[m]["scores"],
+                    "ci": rows[m]["ci"], "overall_rank": rows[m]["overall_rank"]}
+                   for m in order],
         "winner": order[0] if order else None,
     }
 

@@ -81,7 +81,9 @@ loadData().then(data => {
           if (Math.abs(v - stat[m.key].min) < 1e-12) cls = "best";
           else if (Math.abs(v - stat[m.key].max) < 1e-12) cls = "worst";
         }
-        body += `<td class="${cls}">${fmt(v, m.key, m.signed)}</td>`;
+        const ci = s.ci && s.ci[m.key];
+        const tip = ci ? ` title="CI95 ${ci[0]}–${ci[1]}"` : "";
+        body += `<td class="${cls}"${tip}>${fmt(v, m.key, m.signed)}</td>`;
       });
       body += "</tr>";
     });

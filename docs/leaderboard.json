@@ -3,25 +3,45 @@
   "boards": {
     "measurement": {
       "title": "Measurement \u2014 color-difference prediction",
-      "subtitle": "STRESS on real difference datasets (each model's own \u0394E). Lower = closer to human.",
-      "holdout_note": "helmlab metricspace declares no training manifest, so COMBVD may be in-sample; MacAdam 1974 is a fair held-out test where it still ranks 3rd. The Overfit column = ranks dropped from COMBVD to held-out MacAdam (+ = relatively better on the possible-training set).",
+      "subtitle": "STRESS (+ CI95 on hover) on 5 independent difference sources, each model with its own \u0394E. Lower = closer to human. Overall = mean STRESS rank.",
+      "holdout_note": "The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample for the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check. Overfit \u0394rank = held-out rank \u2212 mean in-sample rank (+ = relatively better where it may have been fit). Rank swing = worst\u2212best rank across all 5.",
       "groups": [
         {
-          "label": "Difference STRESS",
+          "label": "COMBVD components \u00b7 STRESS (possible in-sample)",
           "metrics": [
             {
-              "key": "combvd",
-              "label": "COMBVD",
-              "hint": "possible in-sample"
+              "key": "bfd",
+              "label": "BFD-P"
             },
+            {
+              "key": "leeds",
+              "label": "Leeds"
+            },
+            {
+              "key": "witt",
+              "label": "Witt"
+            },
+            {
+              "key": "rit",
+              "label": "RIT-DuPont"
+            }
+          ]
+        },
+        {
+          "label": "Held-out",
+          "metrics": [
             {
               "key": "macadam",
-              "label": "MacAdam 74",
-              "hint": "held-out"
-            },
+              "label": "MacAdam 74"
+            }
+          ]
+        },
+        {
+          "label": "Composite",
+          "metrics": [
             {
               "key": "mean",
-              "label": "Mean"
+              "label": "Mean STRESS"
             }
           ]
         },
@@ -32,7 +52,12 @@
               "key": "overfit",
               "label": "Overfit \u0394rank",
               "signed": true,
-              "hint": "COMBVD\u2192MacAdam rank drop"
+              "hint": "held-out \u2212 in-sample rank"
+            },
+            {
+              "key": "gen_spread",
+              "label": "Rank swing",
+              "hint": "worst\u2212best rank over 5 sources"
             }
           ]
         }
@@ -42,32 +67,110 @@
           "name": "helmlab metricspace",
           "is_helm": true,
           "scores": {
-            "combvd": 22.48,
+            "bfd": 21.81,
+            "leeds": 21.84,
+            "witt": 30.93,
+            "rit": 21.9,
             "macadam": 19.51,
-            "mean": 21.0,
-            "overfit": 2
+            "mean": 23.2,
+            "overfit": 0,
+            "gen_spread": 5
+          },
+          "ci": {
+            "bfd": [
+              21.1,
+              22.6
+            ],
+            "leeds": [
+              20.1,
+              23.5
+            ],
+            "witt": [
+              28.6,
+              33.2
+            ],
+            "rit": [
+              20.2,
+              23.5
+            ],
+            "macadam": [
+              17.3,
+              21.4
+            ]
           },
           "overall_rank": 1
-        },
-        {
-          "name": "CIECAM02-UCS",
-          "is_helm": false,
-          "scores": {
-            "combvd": 30.9,
-            "macadam": 19.21,
-            "mean": 25.05,
-            "overfit": -1
-          },
-          "overall_rank": 2
         },
         {
           "name": "CIEDE2000",
           "is_helm": false,
           "scores": {
-            "combvd": 29.2,
+            "bfd": 29.55,
+            "leeds": 19.25,
+            "witt": 30.22,
+            "rit": 19.47,
             "macadam": 22.13,
-            "mean": 25.66,
-            "overfit": 3
+            "mean": 24.12,
+            "overfit": 4,
+            "gen_spread": 4
+          },
+          "ci": {
+            "bfd": [
+              27.9,
+              31.3
+            ],
+            "leeds": [
+              17.5,
+              20.9
+            ],
+            "witt": [
+              28.0,
+              32.2
+            ],
+            "rit": [
+              17.3,
+              21.7
+            ],
+            "macadam": [
+              19.2,
+              24.8
+            ]
+          },
+          "overall_rank": 2
+        },
+        {
+          "name": "CIECAM02-UCS",
+          "is_helm": false,
+          "scores": {
+            "bfd": 31.27,
+            "leeds": 24.65,
+            "witt": 30.58,
+            "rit": 20.38,
+            "macadam": 19.21,
+            "mean": 25.22,
+            "overfit": -1,
+            "gen_spread": 2
+          },
+          "ci": {
+            "bfd": [
+              29.9,
+              32.7
+            ],
+            "leeds": [
+              22.4,
+              26.8
+            ],
+            "witt": [
+              28.2,
+              32.8
+            ],
+            "rit": [
+              18.5,
+              22.1
+            ],
+            "macadam": [
+              17.2,
+              21.1
+            ]
           },
           "overall_rank": 3
         },
@@ -75,10 +178,36 @@
           "name": "CAM16-UCS",
           "is_helm": false,
           "scores": {
-            "combvd": 33.47,
+            "bfd": 33.97,
+            "leeds": 27.56,
+            "witt": 30.97,
+            "rit": 19.41,
             "macadam": 18.71,
-            "mean": 26.09,
-            "overfit": -4
+            "mean": 26.12,
+            "overfit": -2,
+            "gen_spread": 4
+          },
+          "ci": {
+            "bfd": [
+              32.5,
+              35.4
+            ],
+            "leeds": [
+              25.1,
+              30.0
+            ],
+            "witt": [
+              28.7,
+              32.9
+            ],
+            "rit": [
+              17.9,
+              20.9
+            ],
+            "macadam": [
+              16.6,
+              20.8
+            ]
           },
           "overall_rank": 4
         },
@@ -86,10 +215,36 @@
           "name": "CIE94",
           "is_helm": false,
           "scores": {
-            "combvd": 33.37,
+            "bfd": 33.7,
+            "leeds": 30.49,
+            "witt": 31.7,
+            "rit": 20.3,
             "macadam": 19.78,
-            "mean": 26.57,
-            "overfit": 0
+            "mean": 27.19,
+            "overfit": 0,
+            "gen_spread": 3
+          },
+          "ci": {
+            "bfd": [
+              32.3,
+              35.2
+            ],
+            "leeds": [
+              27.7,
+              33.4
+            ],
+            "witt": [
+              29.4,
+              33.8
+            ],
+            "rit": [
+              18.4,
+              22.0
+            ],
+            "macadam": [
+              17.4,
+              22.3
+            ]
           },
           "overall_rank": 5
         },
@@ -97,32 +252,110 @@
           "name": "DIN99",
           "is_helm": false,
           "scores": {
-            "combvd": 35.57,
+            "bfd": 35.97,
+            "leeds": 29.77,
+            "witt": 34.2,
+            "rit": 21.89,
             "macadam": 23.31,
-            "mean": 29.44,
-            "overfit": 0
+            "mean": 29.03,
+            "overfit": 0,
+            "gen_spread": 1
+          },
+          "ci": {
+            "bfd": [
+              34.4,
+              37.6
+            ],
+            "leeds": [
+              27.5,
+              32.1
+            ],
+            "witt": [
+              31.8,
+              36.4
+            ],
+            "rit": [
+              19.9,
+              23.7
+            ],
+            "macadam": [
+              20.4,
+              26.3
+            ]
           },
           "overall_rank": 6
-        },
-        {
-          "name": "Jzazbz",
-          "is_helm": false,
-          "scores": {
-            "combvd": 41.92,
-            "macadam": 24.14,
-            "mean": 33.03,
-            "overfit": 0
-          },
-          "overall_rank": 7
         },
         {
           "name": "CIELAB",
           "is_helm": false,
           "scores": {
-            "combvd": 42.86,
+            "bfd": 42.46,
+            "leeds": 40.09,
+            "witt": 51.71,
+            "rit": 33.42,
             "macadam": 24.53,
-            "mean": 33.7,
-            "overfit": 0
+            "mean": 38.44,
+            "overfit": 0,
+            "gen_spread": 2
+          },
+          "ci": {
+            "bfd": [
+              40.9,
+              44.1
+            ],
+            "leeds": [
+              37.3,
+              42.6
+            ],
+            "witt": [
+              48.9,
+              54.2
+            ],
+            "rit": [
+              28.5,
+              37.8
+            ],
+            "macadam": [
+              21.7,
+              27.0
+            ]
+          },
+          "overall_rank": 7
+        },
+        {
+          "name": "Jzazbz",
+          "is_helm": false,
+          "scores": {
+            "bfd": 41.35,
+            "leeds": 45.15,
+            "witt": 47.53,
+            "rit": 38.53,
+            "macadam": 24.14,
+            "mean": 39.34,
+            "overfit": -1,
+            "gen_spread": 2
+          },
+          "ci": {
+            "bfd": [
+              39.9,
+              42.7
+            ],
+            "leeds": [
+              42.4,
+              47.6
+            ],
+            "witt": [
+              44.7,
+              50.2
+            ],
+            "rit": [
+              35.7,
+              40.9
+            ],
+            "macadam": [
+              21.6,
+              26.4
+            ]
           },
           "overall_rank": 8
         },
@@ -130,10 +363,36 @@
           "name": "OKLab",
           "is_helm": false,
           "scores": {
-            "combvd": 47.35,
+            "bfd": 47.67,
+            "leeds": 45.01,
+            "witt": 45.15,
+            "rit": 31.76,
             "macadam": 32.72,
-            "mean": 40.03,
-            "overfit": 0
+            "mean": 40.46,
+            "overfit": 1,
+            "gen_spread": 2
+          },
+          "ci": {
+            "bfd": [
+              46.2,
+              49.2
+            ],
+            "leeds": [
+              41.4,
+              48.3
+            ],
+            "witt": [
+              42.1,
+              47.7
+            ],
+            "rit": [
+              29.7,
+              33.7
+            ],
+            "macadam": [
+              29.4,
+              35.0
+            ]
           },
           "overall_rank": 9
         }
