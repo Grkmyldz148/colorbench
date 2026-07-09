@@ -340,6 +340,47 @@ def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True):
             "mean_cv": float(np.mean(cvs)) if cvs else None}
 
 
+def judge_regan_normal_ellipse(space, name="regan_1994_cvd_ellipses",
+                               n_phi=24, Y=0.2):
+    """Regan et al. 1994 (Cambridge Colour Test) discrimination ellipses, NORMAL
+    observers only (classification == 'N': 5 observers × 3 centers). The ellipses
+    are given in the CIE 1976 u'v' plane (semi-major = long_axis_uv, semi-minor =
+    long_axis_uv / axis_ratio, angle = angle_deg), so we build each perimeter in
+    u'v', convert u'v'->xy, and measure the coefficient of variation of the
+    space's distances center->perimeter. Lower = the space matches these
+    just-noticeable thresholds better. The CVD rows (P/PA/EPA) are excluded here;
+    they are used only for Brettel-simulation validation, not normal
+    discrimination.
+
+    Display-neutral adaptation: the Cambridge test runs on a ~D65 CRT, so centers
+    are adapted from D65 (no cross-illuminant CAT needed)."""
+    rows = [r for r in load_canonical(name) if (r.get("classification") or "").strip() == "N"]
+    if not rows:
+        return {"name": name, "skipped": "no normal-observer rows"}
+    phis = np.linspace(0, 2 * math.pi, n_phi, endpoint=False)
+    cvs = []
+    for r in rows:
+        uc, vc = float(r["center_u"]), float(r["center_v"])
+        a = float(r["long_axis_uv"])
+        b = a / float(r["axis_ratio"])
+        th = math.radians(float(r["angle_deg"]))
+        eu = a * np.cos(phis); ev = b * np.sin(phis)
+        pu = uc + eu * math.cos(th) - ev * math.sin(th)
+        pv = vc + eu * math.sin(th) + ev * math.cos(th)
+        u = np.concatenate([[uc], pu]); v = np.concatenate([[vc], pv])
+        # u'v' -> xy (CIE 1976 UCS inverse)
+        denom = 6.0 * u - 16.0 * v + 12.0
+        x = 9.0 * u / denom
+        y = 4.0 * v / denom
+        xyz = xyY_to_xyz(x, y, np.full(len(x), Y))
+        lab = _space_forward(space, xyz)
+        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        if d.mean() > 0:
+            cvs.append(float(d.std() / d.mean()))
+    return {"name": name, "n_centers": len(cvs),
+            "mean_cv": float(np.mean(cvs)) if cvs else None}
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  JUDGE 3b — g-tensor 3D color-matching ellipsoids (Brown 1957 family)
 # ════════════════════════════════════════════════════════════════════════════
@@ -994,6 +1035,7 @@ REGISTRY = [
     ("discrimination","macadam1942",                  judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","luo_rigg_ellipses",            judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","alder1982",                    judge_jnd_ellipse,             "mean_cv",      True),
+    ("discrimination","regan_1994_cvd_ellipses",       judge_regan_normal_ellipse,    "mean_cv",      True),
     ("3d_discrim",    "koenderink_2026_3d_metric_field", judge_jnd_ellipsoid_koenderink, "mean_cv", True),
     # 2026-07-08 expansion — g-tensor 3D ellipsoid family + Lab ellipsoids +
     # tolerance vectors (validated: gray-ramp sanity + known-direction check)
