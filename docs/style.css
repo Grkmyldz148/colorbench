@@ -77,16 +77,14 @@ th.grp { vertical-align: bottom; }
 #leaderboard th { font-size: 12px; }
 #leaderboard th[title] { cursor: help; }
 
-/* sticky first two columns (rank + name) — fixed rank width keeps the offset exact */
-th:first-child, td:first-child {
-  text-align: center; position: sticky; left: 0; z-index: 1;
-  width: 54px; min-width: 54px; max-width: 54px; box-shadow: none;
-}
+/* rank + name columns — NOT sticky. Freezing them made scrolled cells appear
+   half-clipped behind the frozen name column; the user is fine with plain
+   horizontal scroll (with the always-visible scrollbar below), so the whole
+   table scrolls as one clean unit. */
+th:first-child, td:first-child { text-align: center; width: 54px; }
 th:nth-child(2), td:nth-child(2) {
-  text-align: left; position: sticky; left: 54px; z-index: 1;
-  min-width: 132px; border-right: 1px solid var(--line2);
+  text-align: left; min-width: 130px; border-right: 1px solid var(--line2);
 }
-thead th:first-child, thead th:nth-child(2) { z-index: 3; }
 
 tbody td { font-family: var(--mono); color: var(--text); border-top: 1px solid var(--line); }
 tbody tr:nth-child(even) td { background: var(--alt); }
