@@ -142,7 +142,7 @@
     },
     "generation": {
       "title": "Generation \u2014 color-synthesis geometry",
-      "subtitle": "Per-gamut round-trip & gamut-mapping, gradient evenness, and per-dataset human hue/discrimination/spacing. Lower = better; Rank swing low = robust generalist.",
+      "subtitle": "Per-gamut round-trip & gamut-mapping, gradient evenness, and per-dataset human hue/discrimination/spacing. Lower = better. Overall = mean of per-CATEGORY ranks (each of the 7 groups weighs equally, so engineering columns don't drown the human data). Rank swing low = robust generalist.",
       "groups": [
         {
           "label": "Invertibility \u00b7 round-trip max err (per gamut)",
@@ -264,33 +264,6 @@
       ],
       "spaces": [
         {
-          "name": "DIN99d",
-          "is_helm": false,
-          "scores": {
-            "rt_srgb": 2.220446049250313e-15,
-            "rt_p3": 2.4424906541753444e-15,
-            "rt_rec2020": 2.7755575615628914e-15,
-            "grad_cv": 1.5538636989815517,
-            "grad_band": 1.792297601699829,
-            "grad_drift": 5.466673383868616,
-            "gm_mono_srgb": 0.0,
-            "gm_dj_srgb": 0.5197907311751517,
-            "gm_mono_p3": 0.0,
-            "gm_dj_p3": 0.6166226967836771,
-            "gm_mono_rec2020": 0.0,
-            "gm_dj_rec2020": 0.755801204092315,
-            "hue_hb": 5.87514174515184,
-            "hue_ef": 2.5938217550147633,
-            "hue_mun": 3.595516767051572,
-            "disc_mac": 0.23919524814864576,
-            "disc_lr": 0.14316114066634206,
-            "disc_regan": 0.1403066544768195,
-            "sp_osa": 0.1146039926068829,
-            "gen_spread": 6
-          },
-          "overall_rank": 3.28
-        },
-        {
           "name": "IPT",
           "is_helm": false,
           "scores": {
@@ -315,7 +288,34 @@
             "sp_osa": 0.07810386882207511,
             "gen_spread": 7
           },
-          "overall_rank": 3.39
+          "overall_rank": 3.33
+        },
+        {
+          "name": "DIN99d",
+          "is_helm": false,
+          "scores": {
+            "rt_srgb": 2.220446049250313e-15,
+            "rt_p3": 2.4424906541753444e-15,
+            "rt_rec2020": 2.7755575615628914e-15,
+            "grad_cv": 1.5538636989815517,
+            "grad_band": 1.792297601699829,
+            "grad_drift": 5.466673383868616,
+            "gm_mono_srgb": 0.0,
+            "gm_dj_srgb": 0.5197907311751517,
+            "gm_mono_p3": 0.0,
+            "gm_dj_p3": 0.6166226967836771,
+            "gm_mono_rec2020": 0.0,
+            "gm_dj_rec2020": 0.755801204092315,
+            "hue_hb": 5.87514174515184,
+            "hue_ef": 2.5938217550147633,
+            "hue_mun": 3.595516767051572,
+            "disc_mac": 0.23919524814864576,
+            "disc_lr": 0.14316114066634206,
+            "disc_regan": 0.1403066544768195,
+            "sp_osa": 0.1146039926068829,
+            "gen_spread": 6
+          },
+          "overall_rank": 3.43
         },
         {
           "name": "CAM16-UCS",
@@ -342,34 +342,7 @@
             "sp_osa": 0.09505284512614966,
             "gen_spread": 5
           },
-          "overall_rank": 3.75
-        },
-        {
-          "name": "helmlab genspace",
-          "is_helm": true,
-          "scores": {
-            "rt_srgb": 1.7763568394002505e-15,
-            "rt_p3": 1.887379141862766e-15,
-            "rt_rec2020": 1.6653345369377348e-15,
-            "grad_cv": 1.5408392639572206,
-            "grad_band": 1.8281763792037964,
-            "grad_drift": 7.232500705408699,
-            "gm_mono_srgb": 0.0,
-            "gm_dj_srgb": 2.184359548123333,
-            "gm_mono_p3": 0.125,
-            "gm_dj_p3": 2.3177186831076373,
-            "gm_mono_rec2020": 0.375,
-            "gm_dj_rec2020": 2.689390488048692,
-            "hue_hb": 4.781404407690748,
-            "hue_ef": 2.14710354583463,
-            "hue_mun": 3.365568867391152,
-            "disc_mac": 0.2543094287291686,
-            "disc_lr": 0.18888102812759047,
-            "disc_regan": 0.19535788498708992,
-            "sp_osa": 0.14843055615223416,
-            "gen_spread": 6
-          },
-          "overall_rank": 3.78
+          "overall_rank": 3.8
         },
         {
           "name": "CIELAB",
@@ -396,7 +369,34 @@
             "sp_osa": 0.07928155319806417,
             "gen_spread": 6
           },
-          "overall_rank": 3.94
+          "overall_rank": 3.9
+        },
+        {
+          "name": "helmlab genspace",
+          "is_helm": true,
+          "scores": {
+            "rt_srgb": 1.7763568394002505e-15,
+            "rt_p3": 1.887379141862766e-15,
+            "rt_rec2020": 1.6653345369377348e-15,
+            "grad_cv": 1.5408392639572206,
+            "grad_band": 1.8281763792037964,
+            "grad_drift": 7.232500705408699,
+            "gm_mono_srgb": 0.0,
+            "gm_dj_srgb": 2.184359548123333,
+            "gm_mono_p3": 0.125,
+            "gm_dj_p3": 2.3177186831076373,
+            "gm_mono_rec2020": 0.375,
+            "gm_dj_rec2020": 2.689390488048692,
+            "hue_hb": 4.781404407690748,
+            "hue_ef": 2.14710354583463,
+            "hue_mun": 3.365568867391152,
+            "disc_mac": 0.2543094287291686,
+            "disc_lr": 0.18888102812759047,
+            "disc_regan": 0.19535788498708992,
+            "sp_osa": 0.14843055615223416,
+            "gen_spread": 6
+          },
+          "overall_rank": 4.05
         },
         {
           "name": "OKLab",
@@ -423,7 +423,7 @@
             "sp_osa": 0.21240842410563332,
             "gen_spread": 7
           },
-          "overall_rank": 4.28
+          "overall_rank": 4.67
         },
         {
           "name": "Jzazbz",
@@ -450,7 +450,7 @@
             "sp_osa": 0.0929023288803691,
             "gen_spread": 3
           },
-          "overall_rank": 5.78
+          "overall_rank": 5.57
         },
         {
           "name": "ICtCp",
@@ -477,10 +477,10 @@
             "sp_osa": 0.08241828763463882,
             "gen_spread": 5
           },
-          "overall_rank": 6.39
+          "overall_rank": 6.05
         }
       ],
-      "winner": "DIN99d"
+      "winner": "IPT"
     }
   }
 }

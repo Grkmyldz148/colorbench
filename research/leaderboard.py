@@ -218,9 +218,18 @@ def generation_board():
     # human datasets = the held-out independence probes → generalization spread
     human_keys = ["hue_hb", "hue_ef", "hue_mun", "disc_mac", "disc_lr", "disc_regan", "sp_osa"]
     rank = _ranks(rows, all_keys)
+    # overall = mean of per-GROUP mean-ranks (each category weighs equally), NOT
+    # mean of all 19 columns. Otherwise the 12 engineering columns (3×round-trip
+    # near-ties + 3×mono + 3×ΔE-jump + 2×gradient) would drown the 7 human-data
+    # columns, and a space's human-hue strength wouldn't surface. Group-balancing
+    # also collapses the near-tied round-trip triple into one invertibility vote.
     for n, v in rows.items():
-        rs = [rank[k][n] for k in all_keys if n in rank.get(k, {})]
-        v["overall_rank"] = round(sum(rs) / len(rs), 2) if rs else None
+        group_ranks = []
+        for g in groups:  # groups here are the 7 scored categories (generalization appended later)
+            grs = [rank[m["key"]][n] for m in g["metrics"] if n in rank.get(m["key"], {})]
+            if grs:
+                group_ranks.append(sum(grs) / len(grs))
+        v["overall_rank"] = round(sum(group_ranks) / len(group_ranks), 2) if group_ranks else None
         v["scores"]["gen_spread"] = _generalization(rank, human_keys, n)
     order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 99)
     groups.append({"label": "Generalization", "metrics": [
@@ -228,7 +237,9 @@ def generation_board():
     return {
         "title": "Generation — color-synthesis geometry",
         "subtitle": ("Per-gamut round-trip & gamut-mapping, gradient evenness, and per-dataset "
-                     "human hue/discrimination/spacing. Lower = better; Rank swing low = robust generalist."),
+                     "human hue/discrimination/spacing. Lower = better. Overall = mean of per-CATEGORY "
+                     "ranks (each of the 7 groups weighs equally, so engineering columns don't drown "
+                     "the human data). Rank swing low = robust generalist."),
         "groups": groups,
         "spaces": [{"name": n, "is_helm": rows[n]["is_helm"],
                     "scores": rows[n]["scores"], "overall_rank": rows[n]["overall_rank"]}
