@@ -1,9 +1,25 @@
-"""Build the ColorBench leaderboard: every invertible colour-science colour
-space + helmlab, ranked on the human_pool (46 real datasets), property by
-property. Writes docs/leaderboard.json for the GitHub Pages site.
+"""Build the ColorBench leaderboard — TWO separate boards, because a color
+space that measures difference and a color space that generates color are
+judged on different things (the project's core principle: ölçüm ≠ üretim).
 
+  MEASUREMENT board  — "which model best predicts human color difference?"
+      Every entrant scores a STRESS on the real pair datasets (COMBVD,
+      MacAdam-1974) using ITS OWN ΔE. This is where helmlab's *metricspace*
+      (a learned, non-Euclidean distance) competes against CIEDE2000,
+      CAM16-UCS, CIECAM02-UCS, DIN99, CIE94, CIELAB, OKLab, Jzazbz.
+
+  GENERATION board  — "which space is best to generate color in?"
+      Invertible forward spaces scored on synthesis geometry: round-trip
+      precision, gamut-mapping hue monotonicity, gamut ΔE smoothness, plus
+      two human-data geometry checks (constant-hue straightness, Munsell
+      spacing). This is where helmlab's *genspace* competes against OKLab,
+      CIELAB, IPT, Jzazbz, ICtCp, CAM16-UCS, DIN99d.
+
+Writes docs/leaderboard.json + docs/leaderboard-data.js for the site.
 Run:  python3 research/leaderboard.py
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -12,107 +28,190 @@ import warnings
 import numpy as np
 
 warnings.filterwarnings("ignore")
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
 
-import colour  # noqa: E402
+from core import data  # noqa: E402
 from core import human_pool as hp  # noqa: E402
 
-_D65 = colour.CCS_ILLUMINANTS["CIE 1931 2 Degree Standard Observer"]["D65"]
-_NEEDS_ILLUM = {"Lab", "Luv", "DIN99", "ProLab"}
-
-# the invertible 3-vector perceptual/uniform models from colour-science
-COLOUR_SPACES = ["Lab", "Luv", "IPT", "IPT_Ragoo2021", "Jzazbz", "ICtCp",
-                 "ICaCb", "IgPgTg", "Oklab", "DIN99", "ProLab", "Yrg",
-                 "hdr_CIELab", "CAM02UCS", "CAM16UCS", "CAM02LCD", "CAM16LCD",
-                 "CAM02SCD", "CAM16SCD", "sUCS"]
-# pretty display names
-PRETTY = {"Lab": "CIELAB", "Luv": "CIELUV", "Oklab": "OKLab", "Jzazbz": "Jzazbz",
-          "IPT_Ragoo2021": "IPT (Ragoo 2021)", "hdr_CIELab": "hdr-CIELAB",
-          "CAM02UCS": "CAM02-UCS", "CAM16UCS": "CAM16-UCS", "CAM02LCD": "CAM02-LCD",
-          "CAM16LCD": "CAM16-LCD", "CAM02SCD": "CAM02-SCD", "CAM16SCD": "CAM16-SCD"}
+HELMGEN = "/Volumes/harici_ssd/color-space/helmlab-main-repo/checkpoints/genspace_v0.11.1.json"
+HELMMETRIC = "/Volumes/harici_ssd/color-space/helmlab-main-repo/checkpoints/metricspace_v21.json"
+HELM_SRC = "/Volumes/harici_ssd/color-space/helmlab-main-repo/src"
 
 
-class ColourWrapper:
-    """A colour-science model as a ColorBench forward-space (numpy forward)."""
-    def __init__(self, name):
-        self.name = PRETTY.get(name, name)
-        self._f = getattr(colour, f"XYZ_to_{name}")
-        self._illum = name in _NEEDS_ILLUM
+# ───────────────────────── MEASUREMENT board ──────────────────────────────
+# STRESS (lower = better) on real difference-scaling datasets, each model with
+# its own ΔE. Straight from core.metric_eval — the same engine `run.py metric`
+# uses. metricspace competes as a full learned distance, not Euclidean.
+def measurement_board():
+    if HELM_SRC not in sys.path:
+        sys.path.insert(0, HELM_SRC)
+    from core.metric_eval import run_metric_evaluation
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        r = run_metric_evaluation(HELMMETRIC, data.baseline_dir(),
+                                  os.path.dirname(HELM_SRC))
+    combvd, macadam = r["COMBVD"], r["MacAdam1974"]
+    holdout = r.get("_holdout", {})
+    # pretty labels + who is who
+    LABEL = {"MetricSpace": "helmlab metricspace", "CIE Lab": "CIELAB"}
+    models = sorted(set(combvd) | set(macadam))
+    rows = {}
+    for m in models:
+        c, a = combvd.get(m), macadam.get(m)
+        vals = [v for v in (c, a) if isinstance(v, (int, float))]
+        rows[LABEL.get(m, m)] = {
+            "combvd": c, "macadam": a,
+            "mean": round(float(np.mean(vals)), 2) if vals else None,
+            "is_helm": m == "MetricSpace",
+        }
+    order = sorted(rows, key=lambda n: rows[n]["mean"] if rows[n]["mean"] is not None else 99)
+    cols = ["combvd", "macadam", "mean"]
+    rank = {c: {} for c in cols}
+    for c in cols:
+        sc = sorted([(v[c], n) for n, v in rows.items() if isinstance(v[c], (int, float))])
+        for i, (_, n) in enumerate(sc, 1):
+            rank[c][n] = i
+    return {
+        "title": "Measurement — color-difference prediction",
+        "subtitle": "STRESS on real difference datasets (each model's own ΔE). Lower = closer to human.",
+        "metrics": [
+            {"key": "combvd", "label": "COMBVD"},
+            {"key": "macadam", "label": "MacAdam 1974"},
+            {"key": "mean", "label": "Mean STRESS"},
+        ],
+        # metricspace declares no trained_on → its COMBVD may be in-sample; flag it.
+        "holdout_note": ("helmlab metricspace declares no training-data manifest, so "
+                         "its COMBVD score may be in-sample; MacAdam 1974 is a fair "
+                         "held-out test where it still ranks near the top."),
+        "holdout": holdout,
+        "spaces": [
+            {"name": n, "is_helm": rows[n]["is_helm"],
+             "scores": {c: rows[n][c] for c in cols},
+             "ranks": {c: rank[c].get(n) for c in cols},
+             "overall_rank": rank["mean"].get(n)}
+            for n in order
+        ],
+        "winner": order[0] if order else None,
+    }
 
-    def forward(self, xyz):
-        xyz = np.atleast_2d(np.asarray(xyz, float))
-        out = self._f(xyz, _D65) if self._illum else self._f(xyz)
-        return np.asarray(out, float)
+
+# ───────────────────────── GENERATION board ───────────────────────────────
+# Invertible forward spaces scored on synthesis geometry. run_test-compatible
+# built-ins + helmlab genspace. Lower = better on every column.
+GEN_SPACES = ["oklab", "cielab", "ipt", "jzazbz", "ictcp", "cam16ucs", "din99d"]
+GEN_PRETTY = {"oklab": "OKLab", "cielab": "CIELAB", "ipt": "IPT", "jzazbz": "Jzazbz",
+              "ictcp": "ICtCp", "cam16ucs": "CAM16-UCS", "din99d": "DIN99d"}
 
 
-def build_helmlab():
+def _gen_geometry(space, device):
+    """round-trip + gamut-mapping quality for one forward space."""
+    from core.metrics import measure_roundtrip, measure_gamut_mapping
+    rt = measure_roundtrip(space, device)
+    gm = measure_gamut_mapping(space, device)
+    # aggregate the per-L gamut-mapping numbers
+    mono = [v for k, v in _flat(gm) if k.endswith("non_monotonic_hues")]
+    djump = [v for k, v in _flat(gm) if k.endswith("max_de_jump")]
+    rt_err = next((v for k, v in _flat(rt) if "srgb_full" in k and k.endswith("max_error")), None)
+    # Guard: a space whose gamut-mapping ΔE-jumps are ALL exactly zero didn't
+    # earn a perfect smoothness score — the mapping degenerated (constant output
+    # / scale mismatch, seen with the CAM16-UCS build). Mark it unmeasured (None)
+    # so a broken measurement can't win the column.
+    degenerate = bool(djump) and all(v == 0.0 for v in djump)
+    return {
+        "round_trip": float(rt_err) if rt_err is not None else None,
+        "gamut_mono": None if degenerate else (float(np.mean(mono)) if mono else None),
+        "gamut_smooth": None if degenerate else (float(np.mean(djump)) if djump else None),
+    }
+
+
+def _flat(d, pre=""):
+    for k, v in (d.items() if isinstance(d, dict) else []):
+        if isinstance(v, dict):
+            yield from _flat(v, pre + k + ".")
+        elif isinstance(v, (int, float)):
+            yield pre + k, v
+
+
+def generation_board():
     from run import build_space, get_device
-    d, dt, _ = get_device()
-    ck = "/Volumes/harici_ssd/color-space/helmlab-main-repo/checkpoints/genspace_v0.11.1.json"
-    sp = build_space("genspace", ck, d, dtype=dt)
-    sp.name = "helmlab"
-    return sp
+    device, dtype, _ = get_device()
+    jobs = [(n, None, GEN_PRETTY[n]) for n in GEN_SPACES]
+    jobs.append(("genspace", HELMGEN, "helmlab genspace"))
 
+    rows = {}
+    for name, ck, pretty in jobs:
+        try:
+            sp = build_space(name, ck, device, dtype=dtype)
+            sp.name = pretty
+            geo = _gen_geometry(sp, device)
+            panel = hp.evaluate_space_on_pool(sp, validated_only=True)["by_property"]
+        except Exception as e:
+            print(f"  gen skip {pretty}: {type(e).__name__}: {e}"); continue
 
-# properties shown on the leaderboard (validated human-data judges; lower=better)
-PROPS = ["difference", "hue", "discrimination", "3d_discrim", "tolerance", "spacing"]
+        def _mean(prop):
+            vals = [v for v in panel.get(prop, {}).values() if isinstance(v, (int, float))]
+            return round(float(np.mean(vals)), 3) if vals else None
+
+        rows[pretty] = {
+            "round_trip": geo["round_trip"], "gamut_mono": geo["gamut_mono"],
+            "gamut_smooth": geo["gamut_smooth"], "hue": _mean("hue"),
+            "spacing": _mean("spacing"), "is_helm": ck is not None,
+        }
+        _f = lambda v, s: (s % v) if isinstance(v, (int, float)) else "  —"
+        print(f"  {pretty:20} rt={_f(geo['round_trip'], '%.1e')} mono={_f(geo['gamut_mono'], '%.1f')} "
+              f"smooth={_f(geo['gamut_smooth'], '%.2f')} hue={rows[pretty]['hue']} spacing={rows[pretty]['spacing']}")
+
+    cols = ["round_trip", "gamut_mono", "gamut_smooth", "hue", "spacing"]
+    rank = {c: {} for c in cols}
+    for c in cols:
+        sc = sorted([(v[c], n) for n, v in rows.items() if isinstance(v[c], (int, float))])
+        for i, (_, n) in enumerate(sc, 1):
+            rank[c][n] = i
+    overall = {}
+    for n in rows:
+        rs = [rank[c][n] for c in cols if n in rank[c]]
+        overall[n] = round(sum(rs) / len(rs), 2) if rs else None
+    order = sorted(rows, key=lambda n: overall[n] if overall[n] is not None else 99)
+    return {
+        "title": "Generation — color-synthesis geometry",
+        "subtitle": "Round-trip, gamut-mapping smoothness, and human-data hue/spacing. Lower = better.",
+        "metrics": [
+            {"key": "round_trip", "label": "Round-trip err"},
+            {"key": "gamut_mono", "label": "Gamut hue-mono"},
+            {"key": "gamut_smooth", "label": "Gamut ΔE-jump"},
+            {"key": "hue", "label": "Hue (human)"},
+            {"key": "spacing", "label": "Spacing (human)"},
+        ],
+        "spaces": [
+            {"name": n, "is_helm": rows[n]["is_helm"],
+             "scores": {c: rows[n][c] for c in cols},
+             "ranks": {c: rank[c].get(n) for c in cols},
+             "overall_rank": overall[n]}
+            for n in order
+        ],
+        "winner": order[0] if order else None,
+    }
 
 
 def main():
-    spaces = [ColourWrapper(n) for n in COLOUR_SPACES]
-    try:
-        spaces.append(build_helmlab())
-    except Exception as e:
-        print(f"  helmlab skipped: {e}")
+    print("── Measurement board ─────────────────────────────")
+    meas = measurement_board()
+    print(f"  winner: {meas['winner']}")
+    for s in meas["spaces"]:
+        print(f"  {s['name']:22} combvd={s['scores']['combvd']}  macadam={s['scores']['macadam']}  mean={s['scores']['mean']}")
 
-    rows = {}
-    for sp in spaces:
-        try:
-            panel = hp.evaluate_space_on_pool(sp, validated_only=True)["by_property"]
-        except Exception as e:
-            print(f"  {sp.name} failed: {e}"); continue
-        prop_scores = {}
-        for p in PROPS:
-            vals = [v for v in panel.get(p, {}).values() if isinstance(v, (int, float))]
-            if vals:
-                prop_scores[p] = float(np.mean(vals))
-        rows[sp.name] = prop_scores
-        print(f"  {sp.name:20} " + "  ".join(f"{p}={prop_scores.get(p, float('nan')):.2f}"
-                                             for p in PROPS if p in prop_scores))
+    print("\n── Generation board ──────────────────────────────")
+    gen = generation_board()
+    print(f"  winner: {gen['winner']}")
 
-    # per-property ranks (1 = best/lowest); overall = mean rank across properties
-    prop_rank = {p: {} for p in PROPS}
-    for p in PROPS:
-        scored = sorted([(v[p], n) for n, v in rows.items() if p in v])
-        for rank, (_, n) in enumerate(scored, 1):
-            prop_rank[p][n] = rank
-    overall = {}
-    for n in rows:
-        rs = [prop_rank[p][n] for p in PROPS if n in prop_rank[p]]
-        overall[n] = round(sum(rs) / len(rs), 2) if rs else None
-    order = sorted(rows, key=lambda n: overall[n] if overall[n] is not None else 99)
-
-    winners = {p: min(prop_rank[p], key=prop_rank[p].get) for p in PROPS if prop_rank[p]}
-
-    out = {
-        "generated": "2026-07-09",
-        "n_spaces": len(rows),
-        "properties": PROPS,
-        "property_winners": winners,
-        "spaces": [
-            {"name": n, "overall_rank": overall[n],
-             "scores": rows[n],
-             "ranks": {p: prop_rank[p].get(n) for p in PROPS if n in prop_rank[p]}}
-            for n in order
-        ],
-    }
-    dest = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "docs", "leaderboard.json")
+    out = {"generated": "2026-07-09", "boards": {"measurement": meas, "generation": gen}}
+    dest = os.path.join(_ROOT, "docs", "leaderboard.json")
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     json.dump(out, open(dest, "w"), indent=2)
-    print(f"\n  wrote {dest} ({len(rows)} spaces)")
-    print("  overall order:", " > ".join(order[:6]), "...")
-    print("  property winners:", winners)
+    with open(os.path.join(os.path.dirname(dest), "leaderboard-data.js"), "w") as f:
+        f.write("window.LEADERBOARD = " + json.dumps(out) + ";\n")
+    print(f"\n  wrote {dest} + leaderboard-data.js")
 
 
 if __name__ == "__main__":

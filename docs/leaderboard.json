@@ -1,442 +1,348 @@
 {
   "generated": "2026-07-09",
-  "n_spaces": 21,
-  "properties": [
-    "difference",
-    "hue",
-    "discrimination",
-    "3d_discrim",
-    "tolerance",
-    "spacing"
-  ],
-  "property_winners": {
-    "difference": "CAM02-LCD",
-    "hue": "helmlab",
-    "discrimination": "CAM16-SCD",
-    "3d_discrim": "CAM02-UCS",
-    "tolerance": "CAM16-LCD",
-    "spacing": "IPT (Ragoo 2021)"
-  },
-  "spaces": [
-    {
-      "name": "CAM02-UCS",
-      "overall_rank": 5.33,
-      "scores": {
-        "difference": 24.38362712909362,
-        "hue": 3.348220901078934,
-        "discrimination": 0.16759602819813657,
-        "3d_discrim": 0.2714845534856298,
-        "tolerance": 0.2540703618521537,
-        "spacing": 0.08651599517741383
+  "boards": {
+    "measurement": {
+      "title": "Measurement \u2014 color-difference prediction",
+      "subtitle": "STRESS on real difference datasets (each model's own \u0394E). Lower = closer to human.",
+      "metrics": [
+        {
+          "key": "combvd",
+          "label": "COMBVD"
+        },
+        {
+          "key": "macadam",
+          "label": "MacAdam 1974"
+        },
+        {
+          "key": "mean",
+          "label": "Mean STRESS"
+        }
+      ],
+      "holdout_note": "helmlab metricspace declares no training-data manifest, so its COMBVD score may be in-sample; MacAdam 1974 is a fair held-out test where it still ranks near the top.",
+      "holdout": {
+        "COMBVD": "unverified",
+        "MacAdam1974": "unverified",
+        "HumanFeedback": "unverified"
       },
-      "ranks": {
-        "difference": 3,
-        "hue": 10,
-        "discrimination": 4,
-        "3d_discrim": 1,
-        "tolerance": 3,
-        "spacing": 11
-      }
+      "spaces": [
+        {
+          "name": "helmlab metricspace",
+          "is_helm": true,
+          "scores": {
+            "combvd": 22.48,
+            "macadam": 19.51,
+            "mean": 21.0
+          },
+          "ranks": {
+            "combvd": 1,
+            "macadam": 3,
+            "mean": 1
+          },
+          "overall_rank": 1
+        },
+        {
+          "name": "CIECAM02-UCS",
+          "is_helm": false,
+          "scores": {
+            "combvd": 30.9,
+            "macadam": 19.21,
+            "mean": 25.05
+          },
+          "ranks": {
+            "combvd": 3,
+            "macadam": 2,
+            "mean": 2
+          },
+          "overall_rank": 2
+        },
+        {
+          "name": "CIEDE2000",
+          "is_helm": false,
+          "scores": {
+            "combvd": 29.2,
+            "macadam": 22.13,
+            "mean": 25.66
+          },
+          "ranks": {
+            "combvd": 2,
+            "macadam": 5,
+            "mean": 3
+          },
+          "overall_rank": 3
+        },
+        {
+          "name": "CAM16-UCS",
+          "is_helm": false,
+          "scores": {
+            "combvd": 33.47,
+            "macadam": 18.71,
+            "mean": 26.09
+          },
+          "ranks": {
+            "combvd": 5,
+            "macadam": 1,
+            "mean": 4
+          },
+          "overall_rank": 4
+        },
+        {
+          "name": "CIE94",
+          "is_helm": false,
+          "scores": {
+            "combvd": 33.37,
+            "macadam": 19.78,
+            "mean": 26.57
+          },
+          "ranks": {
+            "combvd": 4,
+            "macadam": 4,
+            "mean": 5
+          },
+          "overall_rank": 5
+        },
+        {
+          "name": "DIN99",
+          "is_helm": false,
+          "scores": {
+            "combvd": 35.57,
+            "macadam": 23.31,
+            "mean": 29.44
+          },
+          "ranks": {
+            "combvd": 6,
+            "macadam": 6,
+            "mean": 6
+          },
+          "overall_rank": 6
+        },
+        {
+          "name": "Jzazbz",
+          "is_helm": false,
+          "scores": {
+            "combvd": 41.92,
+            "macadam": 24.14,
+            "mean": 33.03
+          },
+          "ranks": {
+            "combvd": 7,
+            "macadam": 7,
+            "mean": 7
+          },
+          "overall_rank": 7
+        },
+        {
+          "name": "CIELAB",
+          "is_helm": false,
+          "scores": {
+            "combvd": 42.86,
+            "macadam": 24.53,
+            "mean": 33.7
+          },
+          "ranks": {
+            "combvd": 8,
+            "macadam": 8,
+            "mean": 8
+          },
+          "overall_rank": 8
+        },
+        {
+          "name": "OKLab",
+          "is_helm": false,
+          "scores": {
+            "combvd": 47.35,
+            "macadam": 32.72,
+            "mean": 40.03
+          },
+          "ranks": {
+            "combvd": 9,
+            "macadam": 9,
+            "mean": 9
+          },
+          "overall_rank": 9
+        }
+      ],
+      "winner": "helmlab metricspace"
     },
-    {
-      "name": "CAM02-LCD",
-      "overall_rank": 5.33,
-      "scores": {
-        "difference": 23.25683435610165,
-        "hue": 3.348220901078934,
-        "discrimination": 0.18509606786127125,
-        "3d_discrim": 0.2854946246761192,
-        "tolerance": 0.2568372576664433,
-        "spacing": 0.0815569425299456
-      },
-      "ranks": {
-        "difference": 1,
-        "hue": 9,
-        "discrimination": 6,
-        "3d_discrim": 4,
-        "tolerance": 4,
-        "spacing": 8
-      }
-    },
-    {
-      "name": "CAM16-UCS",
-      "overall_rank": 5.83,
-      "scores": {
-        "difference": 24.448071588299936,
-        "hue": 3.5605906139017396,
-        "discrimination": 0.16669522337813059,
-        "3d_discrim": 0.2781399957031753,
-        "tolerance": 0.2503288373538122,
-        "spacing": 0.08396719392398659
-      },
-      "ranks": {
-        "difference": 4,
-        "hue": 13,
-        "discrimination": 3,
-        "3d_discrim": 3,
-        "tolerance": 2,
-        "spacing": 10
-      }
-    },
-    {
-      "name": "CAM16-LCD",
-      "overall_rank": 6.17,
-      "scores": {
-        "difference": 23.410750615672907,
-        "hue": 3.56059061390174,
-        "discrimination": 0.18643056040817724,
-        "3d_discrim": 0.2881563263276624,
-        "tolerance": 0.24875453862717306,
-        "spacing": 0.08105668070577621
-      },
-      "ranks": {
-        "difference": 2,
-        "hue": 14,
-        "discrimination": 7,
-        "3d_discrim": 6,
-        "tolerance": 1,
-        "spacing": 7
-      }
-    },
-    {
-      "name": "IPT (Ragoo 2021)",
-      "overall_rank": 6.83,
-      "scores": {
-        "difference": 25.53961834628763,
-        "hue": 3.1621155378914225,
-        "discrimination": 0.21186643652421883,
-        "3d_discrim": 0.3796215420175695,
-        "tolerance": 0.25984206088276696,
-        "spacing": 0.06458022953734804
-      },
-      "ranks": {
-        "difference": 5,
-        "hue": 4,
-        "discrimination": 10,
-        "3d_discrim": 16,
-        "tolerance": 5,
-        "spacing": 1
-      }
-    },
-    {
-      "name": "ICaCb",
-      "overall_rank": 8.0,
-      "scores": {
-        "difference": 26.767310579509015,
-        "hue": 3.188870559105577,
-        "discrimination": 0.2220234946934962,
-        "3d_discrim": 0.3255601878533342,
-        "tolerance": 0.26700617735537563,
-        "spacing": 0.07145951674474123
-      },
-      "ranks": {
-        "difference": 6,
-        "hue": 6,
-        "discrimination": 15,
-        "3d_discrim": 9,
-        "tolerance": 10,
-        "spacing": 2
-      }
-    },
-    {
-      "name": "CAM02-SCD",
-      "overall_rank": 8.17,
-      "scores": {
-        "difference": 27.096569722912065,
-        "hue": 3.3482209010789346,
-        "discrimination": 0.1628836033273006,
-        "3d_discrim": 0.28574075126211596,
-        "tolerance": 0.2648509134489255,
-        "spacing": 0.09365164369407467
-      },
-      "ranks": {
-        "difference": 8,
-        "hue": 11,
-        "discrimination": 2,
-        "3d_discrim": 5,
-        "tolerance": 9,
-        "spacing": 14
-      }
-    },
-    {
-      "name": "CAM16-SCD",
-      "overall_rank": 8.17,
-      "scores": {
-        "difference": 27.07327544784871,
-        "hue": 3.5605906139017405,
-        "discrimination": 0.16157359438954372,
-        "3d_discrim": 0.2939238553954806,
-        "tolerance": 0.2628343651257282,
-        "spacing": 0.09055300485238339
-      },
-      "ranks": {
-        "difference": 7,
-        "hue": 15,
-        "discrimination": 1,
-        "3d_discrim": 7,
-        "tolerance": 7,
-        "spacing": 12
-      }
-    },
-    {
-      "name": "sUCS",
-      "overall_rank": 8.33,
-      "scores": {
-        "difference": 27.238297332361235,
-        "hue": 3.14171234391182,
-        "discrimination": 0.21020145376086477,
-        "3d_discrim": 0.372626794593238,
-        "tolerance": 0.26420817737481617,
-        "spacing": 0.08297408795605073
-      },
-      "ranks": {
-        "difference": 9,
-        "hue": 3,
-        "discrimination": 9,
-        "3d_discrim": 12,
-        "tolerance": 8,
-        "spacing": 9
-      }
-    },
-    {
-      "name": "IPT",
-      "overall_rank": 9.0,
-      "scores": {
-        "difference": 28.03271823443057,
-        "hue": 3.076821061009568,
-        "discrimination": 0.22075233394715785,
-        "3d_discrim": 0.3734571463861742,
-        "tolerance": 0.2770686613487369,
-        "spacing": 0.07810234016902777
-      },
-      "ranks": {
-        "difference": 10,
-        "hue": 2,
-        "discrimination": 13,
-        "3d_discrim": 13,
-        "tolerance": 11,
-        "spacing": 5
-      }
-    },
-    {
-      "name": "DIN99",
-      "overall_rank": 9.17,
-      "scores": {
-        "difference": 28.067110909953136,
-        "hue": 3.865239626111767,
-        "discrimination": 0.17608922498273483,
-        "3d_discrim": 0.2718555576934739,
-        "tolerance": 0.26050082744068265,
-        "spacing": 0.09101505015330459
-      },
-      "ranks": {
-        "difference": 11,
-        "hue": 18,
-        "discrimination": 5,
-        "3d_discrim": 2,
-        "tolerance": 6,
-        "spacing": 13
-      }
-    },
-    {
-      "name": "ICtCp",
-      "overall_rank": 11.17,
-      "scores": {
-        "difference": 29.10069048329534,
-        "hue": 3.3019207161183965,
-        "discrimination": 0.24625729440053695,
-        "3d_discrim": 0.3329143835201808,
-        "tolerance": 0.2856240369106539,
-        "spacing": 0.07386803104815794
-      },
-      "ranks": {
-        "difference": 12,
-        "hue": 8,
-        "discrimination": 21,
-        "3d_discrim": 11,
-        "tolerance": 12,
-        "spacing": 3
-      }
-    },
-    {
-      "name": "helmlab",
-      "overall_rank": 11.67,
-      "scores": {
-        "difference": 31.44017791038938,
-        "hue": 3.038668490439043,
-        "discrimination": 0.21644201105985883,
-        "3d_discrim": 0.3329037109950511,
-        "tolerance": 0.2925242085589925,
-        "spacing": 0.14843055615223416
-      },
-      "ranks": {
-        "difference": 15,
-        "hue": 1,
-        "discrimination": 11,
-        "3d_discrim": 10,
-        "tolerance": 14,
-        "spacing": 19
-      }
-    },
-    {
-      "name": "ProLab",
-      "overall_rank": 12.17,
-      "scores": {
-        "difference": 33.38909795901644,
-        "hue": 3.5952208138317663,
-        "discrimination": 0.2185546636083751,
-        "3d_discrim": 0.30725940540523977,
-        "tolerance": 0.2974895778416358,
-        "spacing": 0.07391531732025909
-      },
-      "ranks": {
-        "difference": 18,
-        "hue": 16,
-        "discrimination": 12,
-        "3d_discrim": 8,
-        "tolerance": 15,
-        "spacing": 4
-      }
-    },
-    {
-      "name": "OKLab",
-      "overall_rank": 14.67,
-      "scores": {
-        "difference": 38.31815617406905,
-        "hue": 3.1737957022918097,
-        "discrimination": 0.2096524302121392,
-        "3d_discrim": 0.37857408631140466,
-        "tolerance": 0.32871294264311524,
-        "spacing": 0.21239396234252803
-      },
-      "ranks": {
-        "difference": 20,
-        "hue": 5,
-        "discrimination": 8,
-        "3d_discrim": 15,
-        "tolerance": 20,
-        "spacing": 20
-      }
-    },
-    {
-      "name": "CIELAB",
-      "overall_rank": 14.83,
-      "scores": {
-        "difference": 31.03052876200833,
-        "hue": 3.720644365373089,
-        "discrimination": 0.23552537890772327,
-        "3d_discrim": 0.3876128000185166,
-        "tolerance": 0.30487439575985076,
-        "spacing": 0.07928743860759922
-      },
-      "ranks": {
-        "difference": 14,
-        "hue": 17,
-        "discrimination": 19,
-        "3d_discrim": 17,
-        "tolerance": 16,
-        "spacing": 6
-      }
-    },
-    {
-      "name": "Jzazbz",
-      "overall_rank": 14.83,
-      "scores": {
-        "difference": 30.383545032282733,
-        "hue": 3.2278251886875347,
-        "discrimination": 0.22418593205804635,
-        "3d_discrim": 0.43519553434513103,
-        "tolerance": 0.30510478528248,
-        "spacing": 0.1072489500296462
-      },
-      "ranks": {
-        "difference": 13,
-        "hue": 7,
-        "discrimination": 16,
-        "3d_discrim": 20,
-        "tolerance": 17,
-        "spacing": 16
-      }
-    },
-    {
-      "name": "CIELUV",
-      "overall_rank": 16.17,
-      "scores": {
-        "difference": 33.27053545741235,
-        "hue": 3.443805067599483,
-        "discrimination": 0.22163147208486533,
-        "3d_discrim": 0.4133931681260685,
-        "tolerance": 0.3112424354548007,
-        "spacing": 0.12468240354635506
-      },
-      "ranks": {
-        "difference": 17,
-        "hue": 12,
-        "discrimination": 14,
-        "3d_discrim": 19,
-        "tolerance": 18,
-        "spacing": 17
-      }
-    },
-    {
-      "name": "IgPgTg",
-      "overall_rank": 17.0,
-      "scores": {
-        "difference": 31.618084711914257,
-        "hue": 3.9057367046759683,
-        "discrimination": 0.22613404329158068,
-        "3d_discrim": 0.3892511133528339,
-        "tolerance": 0.29002053031067443,
-        "spacing": 0.13986074799363504
-      },
-      "ranks": {
-        "difference": 16,
-        "hue": 20,
-        "discrimination": 17,
-        "3d_discrim": 18,
-        "tolerance": 13,
-        "spacing": 18
-      }
-    },
-    {
-      "name": "hdr-CIELAB",
-      "overall_rank": 17.67,
-      "scores": {
-        "difference": 33.76107838281612,
-        "hue": 3.887793812557184,
-        "discrimination": 0.23977701104192636,
-        "3d_discrim": 0.37634739176204024,
-        "tolerance": 0.32579634266227614,
-        "spacing": 0.0990209255196623
-      },
-      "ranks": {
-        "difference": 19,
-        "hue": 19,
-        "discrimination": 20,
-        "3d_discrim": 14,
-        "tolerance": 19,
-        "spacing": 15
-      }
-    },
-    {
-      "name": "Yrg",
-      "overall_rank": 20.5,
-      "scores": {
-        "difference": 55.40346570189344,
-        "hue": 4.060863894466244,
-        "discrimination": 0.22614091979731746,
-        "3d_discrim": 0.49732139903676975,
-        "tolerance": 0.38439576362225264,
-        "spacing": 0.3013371437963689
-      },
-      "ranks": {
-        "difference": 21,
-        "hue": 21,
-        "discrimination": 18,
-        "3d_discrim": 21,
-        "tolerance": 21,
-        "spacing": 21
-      }
+    "generation": {
+      "title": "Generation \u2014 color-synthesis geometry",
+      "subtitle": "Round-trip, gamut-mapping smoothness, and human-data hue/spacing. Lower = better.",
+      "metrics": [
+        {
+          "key": "round_trip",
+          "label": "Round-trip err"
+        },
+        {
+          "key": "gamut_mono",
+          "label": "Gamut hue-mono"
+        },
+        {
+          "key": "gamut_smooth",
+          "label": "Gamut \u0394E-jump"
+        },
+        {
+          "key": "hue",
+          "label": "Hue (human)"
+        },
+        {
+          "key": "spacing",
+          "label": "Spacing (human)"
+        }
+      ],
+      "spaces": [
+        {
+          "name": "IPT",
+          "is_helm": false,
+          "scores": {
+            "round_trip": 1.4432899320127035e-15,
+            "gamut_mono": 0.041666666666666664,
+            "gamut_smooth": 2.155883702036481,
+            "hue": 3.076,
+            "spacing": 0.078
+          },
+          "ranks": {
+            "round_trip": 2,
+            "gamut_mono": 3,
+            "gamut_smooth": 3,
+            "hue": 2,
+            "spacing": 1
+          },
+          "overall_rank": 2.2
+        },
+        {
+          "name": "CIELAB",
+          "is_helm": false,
+          "scores": {
+            "round_trip": 8.881784197001252e-16,
+            "gamut_mono": 0.0,
+            "gamut_smooth": 0.6950494987910858,
+            "hue": 3.721,
+            "spacing": 0.079
+          },
+          "ranks": {
+            "round_trip": 1,
+            "gamut_mono": 1,
+            "gamut_smooth": 2,
+            "hue": 8,
+            "spacing": 2
+          },
+          "overall_rank": 2.8
+        },
+        {
+          "name": "helmlab genspace",
+          "is_helm": true,
+          "scores": {
+            "round_trip": 1.7763568394002505e-15,
+            "gamut_mono": 0.16666666666666666,
+            "gamut_smooth": 2.397156239759888,
+            "hue": 3.039,
+            "spacing": 0.148
+          },
+          "ranks": {
+            "round_trip": 4,
+            "gamut_mono": 4,
+            "gamut_smooth": 4,
+            "hue": 1,
+            "spacing": 7
+          },
+          "overall_rank": 4.0
+        },
+        {
+          "name": "DIN99d",
+          "is_helm": false,
+          "scores": {
+            "round_trip": 2.220446049250313e-15,
+            "gamut_mono": 0.0,
+            "gamut_smooth": 0.6307382106837146,
+            "hue": 3.541,
+            "spacing": 0.115
+          },
+          "ranks": {
+            "round_trip": 5,
+            "gamut_mono": 2,
+            "gamut_smooth": 1,
+            "hue": 7,
+            "spacing": 6
+          },
+          "overall_rank": 4.2
+        },
+        {
+          "name": "OKLab",
+          "is_helm": false,
+          "scores": {
+            "round_trip": 1.7763568394002505e-15,
+            "gamut_mono": 0.5,
+            "gamut_smooth": 2.76817141126471,
+            "hue": 3.174,
+            "spacing": 0.212
+          },
+          "ranks": {
+            "round_trip": 3,
+            "gamut_mono": 5,
+            "gamut_smooth": 5,
+            "hue": 4,
+            "spacing": 8
+          },
+          "overall_rank": 5.0
+        },
+        {
+          "name": "CAM16-UCS",
+          "is_helm": false,
+          "scores": {
+            "round_trip": 4.107825191113079e-15,
+            "gamut_mono": null,
+            "gamut_smooth": null,
+            "hue": 3.391,
+            "spacing": 0.095
+          },
+          "ranks": {
+            "round_trip": 6,
+            "gamut_mono": null,
+            "gamut_smooth": null,
+            "hue": 5,
+            "spacing": 5
+          },
+          "overall_rank": 5.33
+        },
+        {
+          "name": "Jzazbz",
+          "is_helm": false,
+          "scores": {
+            "round_trip": 2.16382467499443e-13,
+            "gamut_mono": 4.625,
+            "gamut_smooth": 39.85133097319425,
+            "hue": 3.167,
+            "spacing": 0.093
+          },
+          "ranks": {
+            "round_trip": 7,
+            "gamut_mono": 7,
+            "gamut_smooth": 7,
+            "hue": 3,
+            "spacing": 4
+          },
+          "overall_rank": 5.6
+        },
+        {
+          "name": "ICtCp",
+          "is_helm": false,
+          "scores": {
+            "round_trip": 3.319566843629218e-13,
+            "gamut_mono": 2.0416666666666665,
+            "gamut_smooth": 13.224782434723998,
+            "hue": 3.414,
+            "spacing": 0.082
+          },
+          "ranks": {
+            "round_trip": 8,
+            "gamut_mono": 6,
+            "gamut_smooth": 6,
+            "hue": 6,
+            "spacing": 3
+          },
+          "overall_rank": 5.8
+        }
+      ],
+      "winner": "IPT"
     }
-  ]
+  }
 }

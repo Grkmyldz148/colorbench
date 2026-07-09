@@ -56,3 +56,22 @@ footer { max-width: 1000px; margin: 46px auto 0; color: var(--dim); font-size: 1
 footer a { color: var(--accent); }
 .method { font-size: 12px; margin-top: 8px; line-height: 1.5; }
 @media (max-width: 640px) { h1 { font-size: 26px; } body { padding: 0 12px 40px; } }
+
+/* ── two-board tabs ─────────────────────────────────────── */
+#tabs { display: flex; gap: 8px; margin: 26px 0 10px; }
+#tabs button {
+  font: 600 15px/1 inherit; color: var(--dim); cursor: pointer;
+  background: transparent; border: 1px solid var(--line);
+  border-radius: 999px; padding: 9px 20px; transition: all .12s;
+}
+#tabs button:hover { color: var(--text); border-color: var(--dim); }
+#tabs button.active {
+  color: #0d0d0d; background: var(--helm); border-color: var(--helm);
+}
+#board-head { margin: 8px 0 4px; }
+#board-title { margin: 0 0 4px; font-size: 20px; }
+.board-sub { color: var(--dim); font-size: 14px; margin: 0 0 6px; }
+.note.holdout {
+  background: #241f0e; border: 1px solid #4a3f18; border-radius: 8px;
+  padding: 9px 13px; font-size: 13px; color: #d9c98c;
+}

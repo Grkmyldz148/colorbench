@@ -4,35 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ColorBench Leaderboard — perceptual color spaces ranked on human data</title>
-<meta name="description" content="Every invertible colour-science color space plus helmlab, ranked property-by-property on 46 real psychophysical datasets. No single overall score — because no space is best at everything.">
+<meta name="description" content="Two boards, because measuring color difference and generating color are different jobs. Every model ranked on real psychophysical datasets. helmlab competes as metricspace (measurement) and genspace (generation).">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
   <h1>ColorBench <span class="lb">Leaderboard</span></h1>
-  <p class="sub">Every invertible color space in
-    <a href="https://github.com/colour-science/colour">colour-science</a>
-    &mdash; plus <b>helmlab</b> &mdash; ranked on <b id="ndata">46</b> real
-    psychophysical datasets. Lower score = closer to human vision.</p>
-  <p class="note">There is <b>no single overall winner by design</b> — no color
-    space is best at everything. The rank column is the mean of the per-property
-    ranks; the real story is each column. <span class="ak">Ak koyun kara koyun.</span></p>
-  <p class="note">This is the <b>perceptual-measurement</b> board (how well a
-    space's geometry predicts human difference / hue / discrimination). The
-    CAM-UCS family leads it — they are appearance models fit to exactly this
-    kind of data. <b>helmlab</b> is a <b>generation</b> space, tested here off
-    its home turf, and still <b>wins hue outright</b>; its own arena
-    (gamut/gradient quality) is a separate axis where it beats OKLab 26&ndash;8.</p>
+  <p class="sub">Color spaces ranked on real psychophysical datasets — from
+    <a href="https://github.com/colour-science/colour">colour-science</a> and
+    <b>helmlab</b>. Lower score = closer to human vision.</p>
+  <p class="note"><b>Two boards, on purpose.</b> A space that <i>measures</i>
+    color difference and a space that <i>generates</i> color are judged on
+    different things. Mixing them into one ranking is a category error — so we
+    don't. helmlab isn't one entry either: it competes as
+    <b>metricspace</b> (a learned difference model) on the measurement board and
+    <b>genspace</b> (a synthesis space) on the generation board.
+    <span class="ak">Ak koyun kara koyun.</span></p>
 </header>
 
-<section id="winners">
-  <h2>Property champions</h2>
-  <div id="winner-cards" class="cards"></div>
+<nav id="tabs">
+  <button data-board="measurement" class="active">Measurement</button>
+  <button data-board="generation">Generation</button>
+</nav>
+
+<section id="board-head">
+  <h2 id="board-title"></h2>
+  <p class="board-sub" id="board-sub"></p>
+  <p class="note holdout" id="board-holdout" hidden></p>
 </section>
 
 <section id="board">
-  <h2>Full ranking
-    <span class="hint">click a column header to sort · lower is better</span></h2>
+  <h3>Full ranking
+    <span class="hint">click a column header to sort · lower is better · <b>bold</b> = helmlab</span></h3>
   <div class="tablewrap"><table id="leaderboard"></table></div>
 </section>
 
@@ -41,13 +44,16 @@
      · human data from
      <a href="https://github.com/Grkmyldz148/color-perception-datasets">color-perception-datasets</a>
      · <span id="gen"></span></p>
-  <p class="method">Each score is the mean STRESS / error over that property's
-     real human datasets (difference: COMBVD·MacAdam; hue: Hung-Berns·Ebner-Fairchild·Munsell·Xiao;
-     discrimination: MacAdam-1942·Luo-Rigg·Alder·Hong-2025; 3d: Koenderink·Brown·Wyszecki-Fielder;
-     tolerance: RIT-DuPont·Huang; spacing: OSA-UCS). Colour-science spaces use their
-     canonical reference implementations; helmlab is the project's generation space.</p>
+  <p class="method"><b>Measurement</b> = STRESS on the real difference datasets
+     (COMBVD, MacAdam 1974), each model scoring with its own ΔE — this is a pure
+     "predict human color difference" contest. <b>Generation</b> = synthesis
+     geometry: sRGB round-trip precision, gamut-mapping hue monotonicity and ΔE
+     smoothness, plus two human-data geometry checks (constant-hue straightness,
+     Munsell spacing). Colour-science spaces use their canonical reference
+     implementations.</p>
 </footer>
 
+<script src="leaderboard-data.js"></script>
 <script src="leaderboard.js"></script>
 </body>
 </html>
