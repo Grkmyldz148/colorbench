@@ -1,7 +1,7 @@
 {
  "space": "OKLab",
  "device": "CPU float64",
- "timestamp": "2026-07-08T17:41:00.142242",
+ "timestamp": "2026-07-09T17:20:12.057520",
  "roundtrip": {
   "srgb_full_16M": {
    "max_error": 1.7763568394002505e-15,
@@ -5753,230 +5753,233 @@
    }
   }
  },
- "user_image_synthetic_gradient": {
-  "n_pairs": 8,
-  "mean_banding": 255.0,
-  "mean_step_cv": 0.2015371103111147,
-  "mean_hue_drift_deg": 74.54659384779949,
-  "max_hue_drift_deg": 179.68442591849436
- },
- "user_color_grading_lut": {
-  "n_patches": 24,
-  "mean_apply_de": 6.80110508894463e-14,
-  "max_apply_de": 1.839669991375226e-13
- },
- "user_white_balance": {
-  "n_test": 36,
-  "mean_de": 2.9851108001482634,
-  "max_de": 5.3719740907326345,
-  "mean_hue_shift_deg": 4.851063481835668
- },
- "user_natural_scene_palette": {
-  "n_natural": 12,
-  "mean_hue_cstd_deg": 11.257868531494886,
-  "max_hue_cstd_deg": 15.783513076029525,
-  "mean_step_cv": 0.5785414613392518
- },
- "user_tailwind_palette": {
-  "mean_step_cv": 0.5454421232130603,
-  "max_step_cv": 0.8610226240547525,
-  "mean_hue_drift_deg": 26.930562708540524,
-  "max_hue_drift_deg": 69.29994823717739
- },
- "user_material_palette": {
-  "mean_step_cv": 0.4272118943100767,
-  "max_step_cv": 0.9464628491365034,
-  "mean_hue_drift_deg": 25.659727219212446
- },
- "user_diverging_colormap": {
-  "n_colormaps": 6,
-  "mean_step_cv": 0.1229680812448279,
-  "max_step_cv": 0.15533641397378067
- },
- "user_sequential_colormap": {
-  "n_seq": 4,
-  "mean_step_cv": 0.2431747437150252,
-  "mean_banding": 255.0
- },
- "user_categorical_palette": {
-  "n_colors": 8,
-  "min_pairwise_de": 13.942926079057854,
-  "mean_pairwise_de": 30.512617720931864,
-  "max_pairwise_de": 49.47553163698788
- },
- "user_theme_dark_mode": {
-  "n_tokens": 8,
-  "mean_dark_mode_hue_drift_deg": 1.2434497875801753e-14,
-  "max_dark_mode_hue_drift_deg": 4.263256414560601e-14
- },
- "user_skin_tone_fitzpatrick": {
-  "n_tones": 6,
-  "mean_hue_cstd_deg": 16.174263064138195,
-  "max_hue_cstd_deg": 16.851844310422436,
-  "mean_step_cv": 0.5417553503105149
- },
- "user_natural_colors": {
-  "n_natural": 8,
-  "mean_hue_cstd_deg": 11.42691110207663,
-  "mean_step_cv": 0.5775419900059289
- },
- "user_brand_colors": {
-  "n_brands": 30,
-  "mean_hue_cstd_deg": 10.387739706208912,
-  "max_hue_cstd_deg": 21.130777959675854
- },
- "user_logo_color_preservation": {
-  "n_logos": 10,
-  "mean_roundtrip_de": 3.26791355902396e-14,
-  "max_roundtrip_de": 5.307214002237107e-14,
-  "mean_tint_hue_drift_deg": 29.22670227803645,
-  "max_tint_hue_drift_deg": 76.76968767714462
- },
- "user_cinematic_lut": {
-  "n_patches": 24,
-  "mean_lut_de": 6.583965077093203e-14,
-  "max_lut_de": 2.5371693372969456e-13
- },
- "user_picker_hue_continuity": {
-  "n_steps": 360,
-  "mean_step_de": 0.3717361997971527,
-  "step_de_cv": 0.12348404579641307,
-  "max_jump_de": 0.4682630789019735
- },
- "user_picker_chroma_envelope": {
-  "n_hues": 72,
-  "mean_max_C": 64.61701989173889,
-  "max_C": 110.91370582580566,
-  "min_C": 34.09266471862793,
-  "envelope_cv": 0.29961034797825936
- },
- "user_achromatic_visual": {
-  "n_grays": 10,
-  "max_chroma_in_cielab": 1.887379141862766e-13,
-  "mean_chroma_in_cielab": 8.56201793537295e-14,
-  "above_jnd_count": 0
- },
- "user_hue_wheel_uniformity": {
-  "n_hues": 16,
-  "mean_gap_deg": 22.5,
-  "gap_cv": 1.3502389429939612e-15,
-  "max_gap_deg": 22.500000000000032,
-  "min_gap_deg": 22.499999999999943
- },
- "user_cvd_palette_spacing": {
-  "n_colors": 8,
-  "deutan_min_de": 2.82652105093143,
-  "deutan_mean_de": 19.315350550328997,
-  "protan_min_de": 3.0490931014414286,
-  "protan_mean_de": 19.11274775320854,
-  "tritan_min_de": 2.6632691653885616,
-  "tritan_mean_de": 29.18392361435277
- },
- "user_low_vision_contrast": {
-  "n_pairs": 7,
-  "mean_L_diff": 0.5690793883050647,
-  "min_L_diff": 0.2863416762058326,
-  "max_L_diff": 0.8368740899263083,
-  "L_diff_cv": 0.31812756528092545
- },
- "user_color_blind_safe_palettes": {
-  "n_palettes": 3,
-  "Okabe-Ito_deutan_min_de": 11.605111350139442,
-  "Tol-bright_deutan_min_de": 14.824376079823073,
-  "Wong_deutan_min_de": 11.605111350139442,
-  "mean_deutan_min_de": 12.678199593367319
- },
- "user_p3_wide_gamut": {
-  "n_p3_colors": 12,
-  "mean_p3_roundtrip_de": 3.25731087087723e-14,
-  "max_p3_roundtrip_de": 1.1368675634240119e-13
- },
- "user_rec2020_hdr_gamut": {
-  "n_rec2020": 6,
-  "mean_rec2020_roundtrip_de": 2.4747623444321778e-14,
-  "max_rec2020_roundtrip_de": 4.342034757523538e-14
- },
- "user_display_calibration_drift": {
-  "n_patches": 24,
-  "mean_drift_de": 1.2715154574070364,
-  "max_drift_de": 1.7506570589618424
- },
- "user_8bit_quantization": {
-  "n_steps": 256,
-  "invisible_steps": 255,
-  "duplicate_steps": 0,
-  "mean_step_de": 0.33209051957213565
- },
- "user_hover_state_transition": {
-  "n_hovers": 8,
-  "mean_step_cv": 0.06390899109927271,
-  "max_step_cv": 0.08693580535110336
- },
- "user_focus_ring_quality": {
-  "n_backgrounds": 8,
-  "mean_focus_distinct_de": 42.08468365540977,
-  "min_focus_distinct_de": 30.578046698981737
- },
- "user_dark_mode_flip": {
-  "n_tokens": 12,
-  "mean_dark_flip_hue_drift_deg": 3.315866100213801e-14,
-  "max_dark_flip_hue_drift_deg": 1.7053025658242404e-13
- },
- "user_print_cmyk_fidelity": {
-  "n_patches": 24,
-  "mean_cmyk_de": 7.376235266493968e-14,
-  "max_cmyk_de": 2.5371693372969456e-13
- },
- "user_pantone_spot": {
-  "n_pantones": 12,
-  "mean_pantone_de": 5.829562195758573e-14,
-  "max_pantone_de": 1.577177358754981e-13
- },
- "user_hdr_tone_mapping": {
-  "n_hdr_peaks": 6,
-  "mean_hdr_hue_shift_deg": 3.4363727100982415,
-  "max_hdr_hue_shift_deg": 13.62863809765037
- },
- "user_cvd_tritanomaly": {
-  "n_colors": 8,
-  "tritan_min_de": 2.6632691653885616,
-  "tritan_mean_de": 29.18392361435277,
-  "tritan_max_de": 60.32455525742701
- },
- "user_newsprint_simulation": {
-  "n_patches": 18,
-  "mean_newsprint_de": 5.111107394983067e-14,
-  "max_newsprint_de": 1.703068953790249e-13
- },
- "user_cross_cultural_skin": {
-  "n_tones": 12,
-  "mean_hue_cstd_deg": 16.07957938443171,
-  "max_hue_cstd_deg": 17.77332714941831
- },
- "user_glassmorphism": {
-  "n_combos": 20,
-  "mean_alpha_mix_de": 7.028407983979305,
-  "max_alpha_mix_de": 20.002106542445247
- },
- "user_status_indicator_distinct": {
-  "n_status": 4,
-  "min_pairwise_de": 36.234787289025824,
-  "min_pairwise_deutan_de": 12.291942105599917
- },
- "user_real_photo_macbeth": {
-  "n_patches": 54,
-  "mean_hue_cstd_deg": 8.496099153246718,
-  "max_hue_cstd_deg": 20.602164810640293,
-  "mean_step_cv": 0.4348234597674833
- },
- "user_jnd_aware_summary": {
-  "n_samples": 120,
-  "mean_de": 9.392740551376013,
-  "max_de": 26.78459659698074,
-  "min_de": 2.4614009141490056,
-  "below_jnd_pct": 0.0,
-  "above_jnd_pct": 100.0,
-  "very_visible_pct": 72.5
+ "_application_scenarios": {
+  "_note": "UNSCORED design-scenario diagnostics \u2014 not in the W-L-T verdict; measured with CIEDE2000 (a difference ruler, not the spacing consensus). Read qualitatively only.",
+  "user_image_synthetic_gradient": {
+   "n_pairs": 8,
+   "mean_banding": 255.0,
+   "mean_step_cv": 0.2015371103111147,
+   "mean_hue_drift_deg": 74.54659384779949,
+   "max_hue_drift_deg": 179.68442591849436
+  },
+  "user_color_grading_lut": {
+   "n_patches": 24,
+   "mean_apply_de": 6.80110508894463e-14,
+   "max_apply_de": 1.839669991375226e-13
+  },
+  "user_white_balance": {
+   "n_test": 36,
+   "mean_de": 2.9851108001482634,
+   "max_de": 5.3719740907326345,
+   "mean_hue_shift_deg": 4.851063481835668
+  },
+  "user_natural_scene_palette": {
+   "n_natural": 12,
+   "mean_hue_cstd_deg": 11.257868531494886,
+   "max_hue_cstd_deg": 15.783513076029525,
+   "mean_step_cv": 0.5785414613392518
+  },
+  "user_tailwind_palette": {
+   "mean_step_cv": 0.5454421232130603,
+   "max_step_cv": 0.8610226240547525,
+   "mean_hue_drift_deg": 26.930562708540524,
+   "max_hue_drift_deg": 69.29994823717739
+  },
+  "user_material_palette": {
+   "mean_step_cv": 0.4272118943100767,
+   "max_step_cv": 0.9464628491365034,
+   "mean_hue_drift_deg": 25.659727219212446
+  },
+  "user_diverging_colormap": {
+   "n_colormaps": 6,
+   "mean_step_cv": 0.1229680812448279,
+   "max_step_cv": 0.15533641397378067
+  },
+  "user_sequential_colormap": {
+   "n_seq": 4,
+   "mean_step_cv": 0.2431747437150252,
+   "mean_banding": 255.0
+  },
+  "user_categorical_palette": {
+   "n_colors": 8,
+   "min_pairwise_de": 13.942926079057854,
+   "mean_pairwise_de": 30.512617720931864,
+   "max_pairwise_de": 49.47553163698788
+  },
+  "user_theme_dark_mode": {
+   "n_tokens": 8,
+   "mean_dark_mode_hue_drift_deg": 1.2434497875801753e-14,
+   "max_dark_mode_hue_drift_deg": 4.263256414560601e-14
+  },
+  "user_skin_tone_fitzpatrick": {
+   "n_tones": 6,
+   "mean_hue_cstd_deg": 16.174263064138195,
+   "max_hue_cstd_deg": 16.851844310422436,
+   "mean_step_cv": 0.5417553503105149
+  },
+  "user_natural_colors": {
+   "n_natural": 8,
+   "mean_hue_cstd_deg": 11.42691110207663,
+   "mean_step_cv": 0.5775419900059289
+  },
+  "user_brand_colors": {
+   "n_brands": 30,
+   "mean_hue_cstd_deg": 10.387739706208912,
+   "max_hue_cstd_deg": 21.130777959675854
+  },
+  "user_logo_color_preservation": {
+   "n_logos": 10,
+   "mean_roundtrip_de": 3.26791355902396e-14,
+   "max_roundtrip_de": 5.307214002237107e-14,
+   "mean_tint_hue_drift_deg": 29.22670227803645,
+   "max_tint_hue_drift_deg": 76.76968767714462
+  },
+  "user_cinematic_lut": {
+   "n_patches": 24,
+   "mean_lut_de": 6.583965077093203e-14,
+   "max_lut_de": 2.5371693372969456e-13
+  },
+  "user_picker_hue_continuity": {
+   "n_steps": 360,
+   "mean_step_de": 0.3717361997971527,
+   "step_de_cv": 0.12348404579641307,
+   "max_jump_de": 0.4682630789019735
+  },
+  "user_picker_chroma_envelope": {
+   "n_hues": 72,
+   "mean_max_C": 64.61701989173889,
+   "max_C": 110.91370582580566,
+   "min_C": 34.09266471862793,
+   "envelope_cv": 0.29961034797825936
+  },
+  "user_achromatic_visual": {
+   "n_grays": 10,
+   "max_chroma_in_cielab": 1.887379141862766e-13,
+   "mean_chroma_in_cielab": 8.56201793537295e-14,
+   "above_jnd_count": 0
+  },
+  "user_hue_wheel_uniformity": {
+   "n_hues": 16,
+   "mean_gap_deg": 22.5,
+   "gap_cv": 1.3502389429939612e-15,
+   "max_gap_deg": 22.500000000000032,
+   "min_gap_deg": 22.499999999999943
+  },
+  "user_cvd_palette_spacing": {
+   "n_colors": 8,
+   "deutan_min_de": 2.82652105093143,
+   "deutan_mean_de": 19.315350550328997,
+   "protan_min_de": 3.0490931014414286,
+   "protan_mean_de": 19.11274775320854,
+   "tritan_min_de": 2.6632691653885616,
+   "tritan_mean_de": 29.18392361435277
+  },
+  "user_low_vision_contrast": {
+   "n_pairs": 7,
+   "mean_L_diff": 0.5690793883050647,
+   "min_L_diff": 0.2863416762058326,
+   "max_L_diff": 0.8368740899263083,
+   "L_diff_cv": 0.31812756528092545
+  },
+  "user_color_blind_safe_palettes": {
+   "n_palettes": 3,
+   "Okabe-Ito_deutan_min_de": 11.605111350139442,
+   "Tol-bright_deutan_min_de": 14.824376079823073,
+   "Wong_deutan_min_de": 11.605111350139442,
+   "mean_deutan_min_de": 12.678199593367319
+  },
+  "user_p3_wide_gamut": {
+   "n_p3_colors": 12,
+   "mean_p3_roundtrip_de": 3.25731087087723e-14,
+   "max_p3_roundtrip_de": 1.1368675634240119e-13
+  },
+  "user_rec2020_hdr_gamut": {
+   "n_rec2020": 6,
+   "mean_rec2020_roundtrip_de": 2.4747623444321778e-14,
+   "max_rec2020_roundtrip_de": 4.342034757523538e-14
+  },
+  "user_display_calibration_drift": {
+   "n_patches": 24,
+   "mean_drift_de": 1.2715154574070364,
+   "max_drift_de": 1.7506570589618424
+  },
+  "user_8bit_quantization": {
+   "n_steps": 256,
+   "invisible_steps": 255,
+   "duplicate_steps": 0,
+   "mean_step_de": 0.33209051957213565
+  },
+  "user_hover_state_transition": {
+   "n_hovers": 8,
+   "mean_step_cv": 0.06390899109927271,
+   "max_step_cv": 0.08693580535110336
+  },
+  "user_focus_ring_quality": {
+   "n_backgrounds": 8,
+   "mean_focus_distinct_de": 42.08468365540977,
+   "min_focus_distinct_de": 30.578046698981737
+  },
+  "user_dark_mode_flip": {
+   "n_tokens": 12,
+   "mean_dark_flip_hue_drift_deg": 3.315866100213801e-14,
+   "max_dark_flip_hue_drift_deg": 1.7053025658242404e-13
+  },
+  "user_print_cmyk_fidelity": {
+   "n_patches": 24,
+   "mean_cmyk_de": 7.376235266493968e-14,
+   "max_cmyk_de": 2.5371693372969456e-13
+  },
+  "user_pantone_spot": {
+   "n_pantones": 12,
+   "mean_pantone_de": 5.829562195758573e-14,
+   "max_pantone_de": 1.577177358754981e-13
+  },
+  "user_hdr_tone_mapping": {
+   "n_hdr_peaks": 6,
+   "mean_hdr_hue_shift_deg": 3.4363727100982415,
+   "max_hdr_hue_shift_deg": 13.62863809765037
+  },
+  "user_cvd_tritanomaly": {
+   "n_colors": 8,
+   "tritan_min_de": 2.6632691653885616,
+   "tritan_mean_de": 29.18392361435277,
+   "tritan_max_de": 60.32455525742701
+  },
+  "user_newsprint_simulation": {
+   "n_patches": 18,
+   "mean_newsprint_de": 5.111107394983067e-14,
+   "max_newsprint_de": 1.703068953790249e-13
+  },
+  "user_cross_cultural_skin": {
+   "n_tones": 12,
+   "mean_hue_cstd_deg": 16.07957938443171,
+   "max_hue_cstd_deg": 17.77332714941831
+  },
+  "user_glassmorphism": {
+   "n_combos": 20,
+   "mean_alpha_mix_de": 7.028407983979305,
+   "max_alpha_mix_de": 20.002106542445247
+  },
+  "user_status_indicator_distinct": {
+   "n_status": 4,
+   "min_pairwise_de": 36.234787289025824,
+   "min_pairwise_deutan_de": 12.291942105599917
+  },
+  "user_real_photo_macbeth": {
+   "n_patches": 54,
+   "mean_hue_cstd_deg": 8.496099153246718,
+   "max_hue_cstd_deg": 20.602164810640293,
+   "mean_step_cv": 0.4348234597674833
+  },
+  "user_jnd_aware_summary": {
+   "n_samples": 120,
+   "mean_de": 9.392740551376013,
+   "max_de": 26.78459659698074,
+   "min_de": 2.4614009141490056,
+   "below_jnd_pct": 0.0,
+   "above_jnd_pct": 100.0,
+   "very_visible_pct": 72.5
+  }
  },
  "gradients": {
   "overall": {
