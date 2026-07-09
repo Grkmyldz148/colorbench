@@ -58,8 +58,11 @@ loadData().then(data => {
     });
 
     // ── header row 1: group spans ; row 2: metric labels ──
-    let h1 = `<tr><th class="grp" rowspan="2" data-k="overall_rank">Rank</th>`
-           + `<th class="grp" rowspan="2" data-k="name">${current === "measurement" ? "Model" : "Color space"}</th>`;
+    // cfreeze1/cfreeze2 mark the ONLY frozen cells (rank + name). Using classes
+    // rather than :first-child avoids freezing row-2's first metric cell by
+    // accident (the bug that misaligned the grouped header on scroll).
+    let h1 = `<tr><th class="grp cfreeze1" rowspan="2" data-k="overall_rank">Rank</th>`
+           + `<th class="grp cfreeze2" rowspan="2" data-k="name">${current === "measurement" ? "Model" : "Color space"}</th>`;
     let h2 = "<tr>";
     groups.forEach(g => {
       const dg = g.scored === false ? " diag" : "";
@@ -75,8 +78,8 @@ loadData().then(data => {
     rows.forEach((s, i) => {
       const helm = s.is_helm;
       body += `<tr class="${helm ? "helm " : ""}${sortKey === "overall_rank" && i === 0 ? "rank-1" : ""}">`;
-      body += `<td class="rank">${s.overall_rank == null ? "—" : s.overall_rank}</td>`;
-      body += `<td class="name">${s.name}</td>`;
+      body += `<td class="rank cfreeze1">${s.overall_rank == null ? "—" : s.overall_rank}</td>`;
+      body += `<td class="name cfreeze2">${s.name}</td>`;
       metricCols.forEach(m => {
         const v = s.scores[m.key];
         let cls = m.scored ? "" : "diag";

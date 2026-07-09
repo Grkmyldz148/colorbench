@@ -77,24 +77,27 @@ th.grp { vertical-align: bottom; }
 #leaderboard th { font-size: 12px; }
 #leaderboard th[title] { cursor: help; }
 
-/* rank + name columns — NOT sticky. Freezing them made scrolled cells appear
-   half-clipped behind the frozen name column; the user is fine with plain
-   horizontal scroll (with the always-visible scrollbar below), so the whole
-   table scrolls as one clean unit. */
-th:first-child, td:first-child { text-align: center; width: 54px; }
-th:nth-child(2), td:nth-child(2) {
-  text-align: left; min-width: 130px; border-right: 1px solid var(--line2);
+/* frozen rank + name columns — class-based (NOT :first-child, which would also
+   freeze row-2's first metric cell in the grouped header and misalign it). */
+.cfreeze1, .cfreeze2 { position: sticky; z-index: 2; }
+.cfreeze1 { left: 0; width: 54px; min-width: 54px; max-width: 54px; text-align: center; }
+.cfreeze2 {
+  left: 54px; text-align: left; min-width: 130px;
+  border-right: 1px solid var(--line2);
+  box-shadow: 6px 0 8px -6px rgba(20, 25, 35, .18);   /* raised edge: content slides cleanly under */
 }
+thead .cfreeze1, thead .cfreeze2 { z-index: 4; }
+/* frozen cells must be opaque so scrolled cells disappear under them */
+thead .cfreeze1, thead .cfreeze2 { background: var(--alt); }
+tbody tr:nth-child(odd) .cfreeze1, tbody tr:nth-child(odd) .cfreeze2 { background: #fff; }
+tbody tr:nth-child(even) .cfreeze1, tbody tr:nth-child(even) .cfreeze2 { background: var(--alt); }
+tbody tr:hover .cfreeze1, tbody tr:hover .cfreeze2 { background: var(--accentbg) !important; }
+tr.helm .cfreeze1, tr.helm .cfreeze2 { background: var(--helmbg) !important; }
 
 tbody td { font-family: var(--mono); color: var(--text); border-top: 1px solid var(--line); }
 tbody tr:nth-child(even) td { background: var(--alt); }
 tbody tr:nth-child(odd) td { background: #fff; }
-/* sticky columns MUST be opaque (a transparent bg lets scrolled cells bleed
-   through and read as a misaligned "shift"), so set the zebra bg explicitly */
-tbody tr:nth-child(odd) td:first-child, tbody tr:nth-child(odd) td:nth-child(2) { background: #fff; }
-tbody tr:nth-child(even) td:first-child, tbody tr:nth-child(even) td:nth-child(2) { background: var(--alt); }
 tbody tr:hover td { background: var(--accentbg); }
-tbody tr:hover td:first-child, tbody tr:hover td:nth-child(2) { background: var(--accentbg); }
 tbody td.name { font-family: inherit; font-weight: 600; }
 td.rank { color: var(--dim); font-family: var(--mono); }
 
