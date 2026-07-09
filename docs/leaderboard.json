@@ -4,7 +4,7 @@
     "measurement": {
       "title": "Measurement \u2014 color-difference prediction",
       "subtitle": "STRESS (+ CI95 on hover) on 5 independent difference sources, each model with its own \u0394E. Lower = closer to human. Overall = mean STRESS rank.",
-      "holdout_note": "The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample for the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check. Overfit \u0394rank = held-out rank \u2212 mean in-sample rank (+ = relatively better where it may have been fit). Rank swing = worst\u2212best rank across all 5.",
+      "holdout_note": "The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample for the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check. Overfit \u0394rank (helmlab only \u2014 the others aren't fitted) = held-out rank \u2212 mean in-sample rank. metricspace = 0: it wins BFD-P (rank 1, the biggest component) but is only 6th on RIT-DuPont, averaging 3rd \u2014 the same as its held-out MacAdam rank, so NO relative overfit. Rank swing = worst\u2212best rank.",
       "groups": [
         {
           "label": "COMBVD components \u00b7 STRESS (possible in-sample)",
@@ -110,7 +110,7 @@
             "rit": 19.47,
             "macadam": 22.13,
             "mean": 24.12,
-            "overfit": 4,
+            "overfit": null,
             "gen_spread": 4
           },
           "ci": {
@@ -147,7 +147,7 @@
             "rit": 20.38,
             "macadam": 19.21,
             "mean": 25.22,
-            "overfit": -1,
+            "overfit": null,
             "gen_spread": 2
           },
           "ci": {
@@ -184,7 +184,7 @@
             "rit": 19.41,
             "macadam": 18.71,
             "mean": 26.12,
-            "overfit": -2,
+            "overfit": null,
             "gen_spread": 4
           },
           "ci": {
@@ -221,7 +221,7 @@
             "rit": 20.3,
             "macadam": 19.78,
             "mean": 27.19,
-            "overfit": 0,
+            "overfit": null,
             "gen_spread": 3
           },
           "ci": {
@@ -258,7 +258,7 @@
             "rit": 21.89,
             "macadam": 23.31,
             "mean": 29.03,
-            "overfit": 0,
+            "overfit": null,
             "gen_spread": 1
           },
           "ci": {
@@ -295,7 +295,7 @@
             "rit": 33.42,
             "macadam": 24.53,
             "mean": 38.44,
-            "overfit": 0,
+            "overfit": null,
             "gen_spread": 2
           },
           "ci": {
@@ -332,7 +332,7 @@
             "rit": 38.53,
             "macadam": 24.14,
             "mean": 39.34,
-            "overfit": -1,
+            "overfit": null,
             "gen_spread": 2
           },
           "ci": {
@@ -369,7 +369,7 @@
             "rit": 31.76,
             "macadam": 32.72,
             "mean": 40.46,
-            "overfit": 1,
+            "overfit": null,
             "gen_spread": 2
           },
           "ci": {

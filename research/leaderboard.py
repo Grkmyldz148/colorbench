@@ -153,7 +153,11 @@ def measurement_board():
         # better on the possible-training data than on the held-out set.
         r_in = np.mean([rank[k][m] for k in in_keys if m in rank.get(k, {})])
         r_held = rank["macadam"].get(m)
-        v["scores"]["overfit"] = int(round(r_held - r_in)) if r_held else None
+        # overfit is only meaningful for the FITTED model (metricspace) — the
+        # canonical formulas aren't fit to any of these sets, so "overfit" is a
+        # misnomer for them. Show it only for helmlab; blank ("—") otherwise.
+        v["scores"]["overfit"] = (int(round(r_held - r_in))
+                                  if (r_held and v["is_helm"]) else None)
         v["scores"]["gen_spread"] = _generalization(rank, dkeys, m)
         v["overall_rank"] = rank["mean"].get(m)
     order = sorted(rows, key=lambda m: rows[m]["overall_rank"] or 99)
@@ -164,8 +168,10 @@ def measurement_board():
                      "with its own ΔE. Lower = closer to human. Overall = mean STRESS rank."),
         "holdout_note": ("The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample "
                          "for the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check. "
-                         "Overfit Δrank = held-out rank − mean in-sample rank (+ = relatively better "
-                         "where it may have been fit). Rank swing = worst−best rank across all 5."),
+                         "Overfit Δrank (helmlab only — the others aren't fitted) = held-out rank − "
+                         "mean in-sample rank. metricspace = 0: it wins BFD-P (rank 1, the biggest "
+                         "component) but is only 6th on RIT-DuPont, averaging 3rd — the same as its "
+                         "held-out MacAdam rank, so NO relative overfit. Rank swing = worst−best rank."),
         "groups": [
             {"label": "COMBVD components · STRESS (possible in-sample)", "metrics": [
                 {"key": "bfd", "label": f"BFD-P"}, {"key": "leeds", "label": "Leeds"},
