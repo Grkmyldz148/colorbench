@@ -248,6 +248,23 @@ _PROP_OF = {"Hue · human data": "hue", "Discrimination · human": "discriminati
             "3-D discrimination · human": "3d_discrim", "Tolerance · human": "tolerance",
             "Spacing · human": "spacing"}
 
+# diagnostic human judges — real human data but lightly validated, so SHOWN (with
+# honest labels) but NOT scored. (naming/WCS is dropped: it's space-insensitive,
+# ~0.61 for every space, so it carries no signal.) Each group notes its ruler +
+# direction. lower=better unless the label says ↑.
+DIAG_HUMAN = [
+    ("H-K brightness · Spearman ρ, ↑ better · diagnostic", "hk_mechanism", [
+        ("wyszecki_1967_osa_tiles", "Wyszecki-67"),
+        ("zhang_2023_laser_display_brightness", "Zhang-23"),
+        ("sanders_wyszecki_1964_HK", "Sanders-64")]),
+    ("H-K object lightness · STRESS · diagnostic", "hk_object", [
+        ("fairchild_pirrotta_1991", "Fairchild-P")]),
+    ("Chromatic adaptation · ΔE · diagnostic", "adaptation", [
+        ("corresponding_colours", "Corr-colours")]),
+    ("Observer metamerism · spread · diagnostic", "observer_variance", [
+        ("asano_observers", "Asano")]),
+]
+
 
 def _build_genspace():
     from run import build_space, get_device
@@ -268,12 +285,23 @@ def generation_board():
     rows = {}
     for sp in spaces:
         try:
-            panel = hp.evaluate_space_on_pool(sp, validated_only=True)["by_property"]
+            # validated_only=False also runs the diagnostic judges (H-K,
+            # adaptation, observer). Fall back to validated-only if a diagnostic
+            # judge crashes on some space, so the space still appears.
+            try:
+                panel = hp.evaluate_space_on_pool(sp, validated_only=False)["by_property"]
+            except Exception:
+                panel = hp.evaluate_space_on_pool(sp, validated_only=True)["by_property"]
         except Exception as e:
             print(f"  gen skip {sp.name}: {type(e).__name__}: {e}"); continue
         sc = {}
         for gl, metrics in HUMAN:
             prop = panel.get(_PROP_OF[gl], {})
+            for key, _ in metrics:
+                v = prop.get(key)
+                sc[key] = float(v) if isinstance(v, (int, float)) else None
+        for _, propname, metrics in DIAG_HUMAN:
+            prop = panel.get(propname, {})
             for key, _ in metrics:
                 v = prop.get(key)
                 sc[key] = float(v) if isinstance(v, (int, float)) else None
@@ -306,6 +334,10 @@ def generation_board():
                "metrics": [{"key": k, "label": lb} for k, lb in ms]} for gl, ms in HUMAN]
     groups.append({"label": "Generalization", "scored": True, "metrics": [
         {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 16 datasets"}]})
+    # diagnostic human judges (real data, lightly validated) — shown, not scored
+    for gl, propname, metrics in DIAG_HUMAN:
+        groups.append({"label": gl, "scored": False,
+                       "metrics": [{"key": k, "label": lb} for k, lb in metrics]})
     # physics-only robustness gate — NOT scored (no ruler, so no family bias);
     # flags spaces that lose invertibility or go non-finite at wide gamut
     groups.append({"label": "Robustness · physics (gate, not scored)", "scored": False, "metrics": [
@@ -314,10 +346,12 @@ def generation_board():
         {"key": "nan_rec2020", "label": "Rec2020 NaN%", "hint": "% of wide-gamut points that go non-finite"}]})
     return {
         "title": "Generation — match to human vision",
-        "subtitle": ("Ranked on the FULL validated human pool — 16 datasets in 5 categories (hue, "
-                     "discrimination, 3-D discrimination, tolerance, spacing), each category weighing "
-                     "equally. Lower = closer to human. No CIELab-referenced engineering metric is "
-                     "scored (that ruler flatters CIELAB). Rank swing low = robust generalist."),
+        "subtitle": ("RANKED on the full validated human pool — 16 datasets in 5 categories (hue, "
+                     "discrimination, 3-D discrimination, tolerance, spacing), each category equal "
+                     "weight. Everything else is SHOWN but not scored, honestly labeled: diagnostic "
+                     "human judges (H-K brightness/lightness, chromatic adaptation, observer "
+                     "metamerism) and a physics robustness gate. Lower = better except columns marked "
+                     "↑. No CIELab-referenced engineering metric is scored (that ruler flatters CIELAB)."),
         "groups": groups,
         "spaces": [{"name": n, "is_helm": rows[n]["is_helm"], "scores": rows[n]["scores"],
                     "overall_rank": rows[n]["overall_rank"]} for n in order],

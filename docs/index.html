@@ -35,7 +35,7 @@
 
 <section id="board">
   <h3>Full ranking
-    <span class="hint">click any column to sort · lower is better · rows grouped by category · <span class="ak">★</span> = helmlab</span></h3>
+    <span class="hint">click any column to sort · lower is better (except ↑ columns) · grey = shown but not scored · <span class="ak">★</span> = helmlab</span></h3>
   <div class="tablewrap"><table id="leaderboard"></table></div>
 </section>
 
@@ -61,10 +61,17 @@
      <b>Robustness</b> columns are a physics-only gate (not scored): round-trip
      invertibility and whether a space stays finite across the Rec2020 gamut —
      measured against the identity and "is this a finite number", so no rival
-     space can bias it (it flags e.g. Yrg's 1e-4 round-trip). <b>Rank swing</b>
-     = worst minus best rank across the datasets — low = robust generalist, high =
-     narrow specialist (the empirical fingerprint of overfitting). Colour-science
-     spaces use their canonical reference implementations.</p>
+     space can bias it (it flags e.g. Yrg's 1e-4 round-trip). The other greyed
+     groups are <b>diagnostic human judges</b> (real data, lightly validated —
+     shown, not scored): Helmholtz-Kohlrausch brightness (Wyszecki 1967 / Zhang
+     2023 / Sanders 1964 — ρ, ↑ better) and object lightness (Fairchild-Pirrotta),
+     chromatic adaptation (corresponding colours — where CIELAB, having no CAT,
+     scores ~137 ΔE vs OKLab's ~0.3) and observer metamerism (Asano). Color naming
+     (WCS) is omitted — it is space-insensitive (~0.61 for every space).
+     <b>Rank swing</b> = worst minus best rank across the 16 scored datasets — low
+     = robust generalist, high = narrow specialist (the empirical fingerprint of
+     overfitting). Colour-science spaces use their canonical reference
+     implementations.</p>
 </footer>
 
 <script src="leaderboard-data.js"></script>
