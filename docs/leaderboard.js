@@ -1,6 +1,6 @@
-// Two boards (measurement / generation). Prefer embedded data so the page
-// renders from file:// too (a bare fetch of a local JSON is CORS-blocked);
-// fall back to fetch for freshness when served over http.
+// Two boards (measurement / generation), each a detailed grouped comparison.
+// Prefer embedded data so the page renders from file:// too (a bare fetch of a
+// local JSON is CORS-blocked); fall back to fetch when served over http.
 function loadData() {
   if (window.LEADERBOARD) return Promise.resolve(window.LEADERBOARD);
   return fetch("leaderboard.json").then(r => r.json());
@@ -17,11 +17,12 @@ loadData().then(data => {
   const holdoutEl = document.getElementById("board-holdout");
   const table = document.getElementById("leaderboard");
 
-  function fmt(v, key) {
+  function fmt(v, key, signed) {
     if (v == null) return "—";
-    if (key === "round_trip") return v.toExponential(1);
+    if (String(key).startsWith("rt_")) return v.toExponential(1);
+    if (signed) return (v > 0 ? "+" : "") + v;
     if (Number.isInteger(v)) return String(v);
-    return v.toFixed(2);
+    return Math.abs(v) < 1 ? v.toFixed(3) : v.toFixed(2);
   }
 
   function render() {
@@ -31,51 +32,63 @@ loadData().then(data => {
     if (b.holdout_note) { holdoutEl.hidden = false; holdoutEl.textContent = "⚠ " + b.holdout_note; }
     else holdoutEl.hidden = true;
 
-    const metricCols = b.metrics;
-    const cols = [
-      { key: "overall_rank", label: "Rank", get: s => s.overall_rank },
-      { key: "name", label: current === "measurement" ? "Model" : "Color space", get: s => s.name },
-      ...metricCols.map(m => ({ key: m.key, label: m.label, get: s => s.scores[m.key] })),
-    ];
+    // flatten metrics from groups, keep group spans for the header
+    const groups = b.groups;
+    const metricCols = [];
+    groups.forEach(g => g.metrics.forEach(m => metricCols.push({ ...m, group: g.label })));
 
-    // per-column best/worst for coloring
+    // signed columns (overfit Δrank) aren't "lower=better" — skip best/worst tint
     const stat = {};
     metricCols.forEach(m => {
+      if (m.signed) return;
       const vals = b.spaces.map(s => s.scores[m.key]).filter(v => v != null);
-      stat[m.key] = { min: Math.min(...vals), max: Math.max(...vals) };
+      if (vals.length) stat[m.key] = { min: Math.min(...vals), max: Math.max(...vals) };
     });
 
+    const getVal = (s, key) => key === "overall_rank" ? s.overall_rank
+      : key === "name" ? s.name : s.scores[key];
+
     const rows = [...b.spaces].sort((a, z) => {
-      const va = cols.find(c => c.key === sortKey).get(a);
-      const vb = cols.find(c => c.key === sortKey).get(z);
+      const va = getVal(a, sortKey), vb = getVal(z, sortKey);
       if (va == null) return 1; if (vb == null) return -1;
       if (typeof va === "string") return asc ? va.localeCompare(vb) : vb.localeCompare(va);
       return asc ? va - vb : vb - va;
     });
 
-    let html = "<thead><tr>" + cols.map(c =>
-      `<th data-k="${c.key}" class="${c.key === sortKey ? "sorted" : ""}">${c.label}</th>`
-    ).join("") + "</tr></thead><tbody>";
+    // ── header row 1: group spans ; row 2: metric labels ──
+    let h1 = `<tr><th class="grp" rowspan="2" data-k="overall_rank">Rank</th>`
+           + `<th class="grp" rowspan="2" data-k="name">${current === "measurement" ? "Model" : "Color space"}</th>`;
+    let h2 = "<tr>";
+    groups.forEach(g => {
+      h1 += `<th class="grolabel" colspan="${g.metrics.length}">${g.label}</th>`;
+      g.metrics.forEach(m => {
+        const t = m.hint ? ` title="${m.hint}"` : "";
+        h2 += `<th data-k="${m.key}" class="${m.key === sortKey ? "sorted" : ""}"${t}>${m.label}${m.hint ? " ⓘ" : ""}</th>`;
+      });
+    });
+    h1 += "</tr>"; h2 += "</tr>";
+
+    let body = "<tbody>";
     rows.forEach((s, i) => {
       const helm = s.is_helm;
-      html += `<tr class="${helm ? "helm " : ""}${sortKey === "overall_rank" && i === 0 ? "rank-1" : ""}">`;
-      cols.forEach(c => {
-        let v = c.get(s), cls = "", disp = "";
-        if (c.key === "name") { cls = "name"; disp = v; }
-        else if (c.key === "overall_rank") { cls = "rank"; disp = v == null ? "—" : v; }
-        else {
-          disp = fmt(v, c.key);
-          if (v != null && stat[c.key]) {
-            if (Math.abs(v - stat[c.key].min) < 1e-12) cls = "best";
-            else if (Math.abs(v - stat[c.key].max) < 1e-12) cls = "worst";
-          }
+      body += `<tr class="${helm ? "helm " : ""}${sortKey === "overall_rank" && i === 0 ? "rank-1" : ""}">`;
+      body += `<td class="rank">${s.overall_rank == null ? "—" : s.overall_rank}</td>`;
+      body += `<td class="name">${s.name}</td>`;
+      metricCols.forEach(m => {
+        const v = s.scores[m.key];
+        let cls = "";
+        if (!m.signed && v != null && stat[m.key]) {
+          if (Math.abs(v - stat[m.key].min) < 1e-12) cls = "best";
+          else if (Math.abs(v - stat[m.key].max) < 1e-12) cls = "worst";
         }
-        html += `<td class="${cls}">${disp}</td>`;
+        body += `<td class="${cls}">${fmt(v, m.key, m.signed)}</td>`;
       });
-      html += "</tr>";
+      body += "</tr>";
     });
-    table.innerHTML = html + "</tbody>";
-    table.querySelectorAll("th").forEach(th => th.onclick = () => {
+    body += "</tbody>";
+
+    table.innerHTML = "<thead>" + h1 + h2 + "</thead>" + body;
+    table.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => {
       const k = th.dataset.k;
       if (k === sortKey) asc = !asc; else { sortKey = k; asc = true; }
       render();

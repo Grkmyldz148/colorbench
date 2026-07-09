@@ -1,21 +1,23 @@
-"""Build the ColorBench leaderboard — TWO separate boards, because a color
-space that measures difference and a color space that generates color are
-judged on different things (the project's core principle: ölçüm ≠ üretim).
+"""Build the ColorBench leaderboard — TWO boards (ölçüm ≠ üretim), each a
+DETAILED, grouped, spec-by-spec comparison (Epey/Akakçe style): per-gamut
+breakdowns, per-dataset human scores, and a generalization/overfit column.
 
   MEASUREMENT board  — "which model best predicts human color difference?"
-      Every entrant scores a STRESS on the real pair datasets (COMBVD,
-      MacAdam-1974) using ITS OWN ΔE. This is where helmlab's *metricspace*
-      (a learned, non-Euclidean distance) competes against CIEDE2000,
-      CAM16-UCS, CIECAM02-UCS, DIN99, CIE94, CIELAB, OKLab, Jzazbz.
+      STRESS on real pair datasets (COMBVD, MacAdam-1974), each model with its
+      OWN ΔE. Overfit check: a fitted model that wins big on its likely training
+      set (COMBVD) but drops on the held-out set (MacAdam) shows an in-sample
+      gap. helmlab metricspace competes here.
 
   GENERATION board  — "which space is best to generate color in?"
-      Invertible forward spaces scored on synthesis geometry: round-trip
-      precision, gamut-mapping hue monotonicity, gamut ΔE smoothness, plus
-      two human-data geometry checks (constant-hue straightness, Munsell
-      spacing). This is where helmlab's *genspace* competes against OKLab,
-      CIELAB, IPT, Jzazbz, ICtCp, CAM16-UCS, DIN99d.
+      Invertible forward spaces, scored on synthesis geometry BROKEN DOWN BY
+      GAMUT (sRGB / Display-P3 / Rec2020): round-trip precision, gamut-mapping
+      hue monotonicity and ΔE smoothness; plus gradient evenness and per-dataset
+      human hue / discrimination / spacing. Generalization = how much a space's
+      rank swings across the independent human datasets (a narrow specialist
+      that wins one and loses another is the empirical fingerprint of overfit).
+      helmlab genspace competes here.
 
-Writes docs/leaderboard.json + docs/leaderboard-data.js for the site.
+Writes docs/leaderboard.json + docs/leaderboard-data.js.
 Run:  python3 research/leaderboard.py
 """
 import contextlib
@@ -39,21 +41,43 @@ HELMMETRIC = "/Volumes/harici_ssd/color-space/helmlab-main-repo/checkpoints/metr
 HELM_SRC = "/Volumes/harici_ssd/color-space/helmlab-main-repo/src"
 
 
+def _flat(d, pre=""):
+    for k, v in (d.items() if isinstance(d, dict) else []):
+        if isinstance(v, dict):
+            yield from _flat(v, pre + k + ".")
+        elif isinstance(v, (int, float)):
+            yield pre + k, v
+
+
+def _ranks(rows, keys):
+    """rank (1=best/lowest) for each (space, key); None where a space lacks it."""
+    rank = {k: {} for k in keys}
+    for k in keys:
+        sc = sorted([(v["scores"][k], n) for n, v in rows.items()
+                     if isinstance(v["scores"].get(k), (int, float))])
+        for i, (_, n) in enumerate(sc, 1):
+            rank[k][n] = i
+    return rank
+
+
+def _generalization(rank, keys, name):
+    """Rank swing across independent datasets: (worst - best) rank. Low = robust
+    generalist; high = narrow specialist (the empirical fingerprint of overfit)."""
+    rs = [rank[k][name] for k in keys if name in rank.get(k, {})]
+    if len(rs) < 2:
+        return None
+    return max(rs) - min(rs)
+
+
 # ───────────────────────── MEASUREMENT board ──────────────────────────────
-# STRESS (lower = better) on real difference-scaling datasets, each model with
-# its own ΔE. Straight from core.metric_eval — the same engine `run.py metric`
-# uses. metricspace competes as a full learned distance, not Euclidean.
 def measurement_board():
     if HELM_SRC not in sys.path:
         sys.path.insert(0, HELM_SRC)
     from core.metric_eval import run_metric_evaluation
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        r = run_metric_evaluation(HELMMETRIC, data.baseline_dir(),
-                                  os.path.dirname(HELM_SRC))
+        r = run_metric_evaluation(HELMMETRIC, data.baseline_dir(), os.path.dirname(HELM_SRC))
     combvd, macadam = r["COMBVD"], r["MacAdam1974"]
-    holdout = r.get("_holdout", {})
-    # pretty labels + who is who
     LABEL = {"MetricSpace": "helmlab metricspace", "CIE Lab": "CIELAB"}
     models = sorted(set(combvd) | set(macadam))
     rows = {}
@@ -61,76 +85,82 @@ def measurement_board():
         c, a = combvd.get(m), macadam.get(m)
         vals = [v for v in (c, a) if isinstance(v, (int, float))]
         rows[LABEL.get(m, m)] = {
-            "combvd": c, "macadam": a,
-            "mean": round(float(np.mean(vals)), 2) if vals else None,
             "is_helm": m == "MetricSpace",
+            "scores": {"combvd": c, "macadam": a,
+                       "mean": round(float(np.mean(vals)), 2) if vals else None},
         }
-    order = sorted(rows, key=lambda n: rows[n]["mean"] if rows[n]["mean"] is not None else 99)
-    cols = ["combvd", "macadam", "mean"]
-    rank = {c: {} for c in cols}
-    for c in cols:
-        sc = sorted([(v[c], n) for n, v in rows.items() if isinstance(v[c], (int, float))])
-        for i, (_, n) in enumerate(sc, 1):
-            rank[c][n] = i
+    dkeys = ["combvd", "macadam"]
+    rank = _ranks(rows, dkeys + ["mean"])
+    for n, v in rows.items():
+        # overfit signal: how many ranks the model DROPS from COMBVD (likely
+        # in-sample for the fitted metricspace) to held-out MacAdam. Positive =
+        # relatively better on the possible-training set.
+        rc, ra = rank["combvd"].get(n), rank["macadam"].get(n)
+        v["scores"]["overfit"] = (ra - rc) if (rc and ra) else None
+        v["overall_rank"] = rank["mean"].get(n)
+        v["ranks"] = {k: rank[k].get(n) for k in dkeys}
+    order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 99)
     return {
         "title": "Measurement — color-difference prediction",
         "subtitle": "STRESS on real difference datasets (each model's own ΔE). Lower = closer to human.",
-        "metrics": [
-            {"key": "combvd", "label": "COMBVD"},
-            {"key": "macadam", "label": "MacAdam 1974"},
-            {"key": "mean", "label": "Mean STRESS"},
+        "holdout_note": ("helmlab metricspace declares no training manifest, so COMBVD may be "
+                         "in-sample; MacAdam 1974 is a fair held-out test where it still ranks 3rd. "
+                         "The Overfit column = ranks dropped from COMBVD to held-out MacAdam "
+                         "(+ = relatively better on the possible-training set)."),
+        "groups": [
+            {"label": "Difference STRESS", "metrics": [
+                {"key": "combvd", "label": "COMBVD", "hint": "possible in-sample"},
+                {"key": "macadam", "label": "MacAdam 74", "hint": "held-out"},
+                {"key": "mean", "label": "Mean"}]},
+            {"label": "Generalization", "metrics": [
+                {"key": "overfit", "label": "Overfit Δrank", "signed": True,
+                 "hint": "COMBVD→MacAdam rank drop"}]},
         ],
-        # metricspace declares no trained_on → its COMBVD may be in-sample; flag it.
-        "holdout_note": ("helmlab metricspace declares no training-data manifest, so "
-                         "its COMBVD score may be in-sample; MacAdam 1974 is a fair "
-                         "held-out test where it still ranks near the top."),
-        "holdout": holdout,
-        "spaces": [
-            {"name": n, "is_helm": rows[n]["is_helm"],
-             "scores": {c: rows[n][c] for c in cols},
-             "ranks": {c: rank[c].get(n) for c in cols},
-             "overall_rank": rank["mean"].get(n)}
-            for n in order
-        ],
+        "spaces": [{"name": n, "is_helm": rows[n]["is_helm"],
+                    "scores": rows[n]["scores"], "overall_rank": rows[n]["overall_rank"]}
+                   for n in order],
         "winner": order[0] if order else None,
     }
 
 
 # ───────────────────────── GENERATION board ───────────────────────────────
-# Invertible forward spaces scored on synthesis geometry. run_test-compatible
-# built-ins + helmlab genspace. Lower = better on every column.
 GEN_SPACES = ["oklab", "cielab", "ipt", "jzazbz", "ictcp", "cam16ucs", "din99d"]
 GEN_PRETTY = {"oklab": "OKLab", "cielab": "CIELAB", "ipt": "IPT", "jzazbz": "Jzazbz",
               "ictcp": "ICtCp", "cam16ucs": "CAM16-UCS", "din99d": "DIN99d"}
+GAMUTS = [("sRGB", "sRGB"), ("P3", "P3"), ("Rec2020", "Rec2020")]
 
 
-def _gen_geometry(space, device):
-    """round-trip + gamut-mapping quality for one forward space."""
-    from core.metrics import measure_roundtrip, measure_gamut_mapping
-    rt = measure_roundtrip(space, device)
-    gm = measure_gamut_mapping(space, device)
-    # aggregate the per-L gamut-mapping numbers
-    mono = [v for k, v in _flat(gm) if k.endswith("non_monotonic_hues")]
-    djump = [v for k, v in _flat(gm) if k.endswith("max_de_jump")]
-    rt_err = next((v for k, v in _flat(rt) if "srgb_full" in k and k.endswith("max_error")), None)
-    # Guard: a space whose gamut-mapping ΔE-jumps are ALL exactly zero didn't
-    # earn a perfect smoothness score — the mapping degenerated (constant output
-    # / scale mismatch, seen with the CAM16-UCS build). Mark it unmeasured (None)
-    # so a broken measurement can't win the column.
-    degenerate = bool(djump) and all(v == 0.0 for v in djump)
-    return {
-        "round_trip": float(rt_err) if rt_err is not None else None,
-        "gamut_mono": None if degenerate else (float(np.mean(mono)) if mono else None),
-        "gamut_smooth": None if degenerate else (float(np.mean(djump)) if djump else None),
-    }
+def _gen_metrics(space, device):
+    from core.metrics import measure_roundtrip, measure_gamut_mapping, measure_gradients
+    from core.pairs import generate_all_pairs
+    rt = dict(_flat(measure_roundtrip(space, device)))
+    gm = dict(_flat(measure_gamut_mapping(space, device)))
+    pairs_xyz, labels = generate_all_pairs(device)
+    gr = dict(_flat(measure_gradients(space, pairs_xyz, labels, device)))
 
+    def rt_err(tag):
+        for k, v in rt.items():
+            if k.startswith(tag) and k.endswith("max_error"):
+                return float(v)
+        return None
 
-def _flat(d, pre=""):
-    for k, v in (d.items() if isinstance(d, dict) else []):
-        if isinstance(v, dict):
-            yield from _flat(v, pre + k + ".")
-        elif isinstance(v, (int, float)):
-            yield pre + k, v
+    def gm_agg(gamut, suffix):
+        vals = [v for k, v in gm.items() if k.startswith(gamut + "_L") and k.endswith(suffix)]
+        # all-zero ΔE-jumps ⇒ the mapping degenerated (e.g. CAM16-UCS build): mark unmeasured
+        if suffix == "max_de_jump" and vals and all(v == 0.0 for v in vals):
+            return None
+        return float(np.mean(vals)) if vals else None
+
+    out = {"rt_srgb": rt_err("srgb_full"), "rt_p3": rt_err("p3_full"),
+           "rt_rec2020": rt_err("rec2020_2M"),
+           "grad_cv": gr.get("overall.cv_mean"), "grad_band": gr.get("overall.banding_mean"),
+           "grad_drift": gr.get("overall.drift_mean")}
+    for g, _ in GAMUTS:
+        smooth = gm_agg(g, "max_de_jump")
+        mono = gm_agg(g, "non_monotonic_hues")
+        out[f"gm_mono_{g.lower()}"] = None if smooth is None else mono
+        out[f"gm_dj_{g.lower()}"] = smooth
+    return out
 
 
 def generation_board():
@@ -144,52 +174,65 @@ def generation_board():
         try:
             sp = build_space(name, ck, device, dtype=dtype)
             sp.name = pretty
-            geo = _gen_geometry(sp, device)
+            m = _gen_metrics(sp, device)
             panel = hp.evaluate_space_on_pool(sp, validated_only=True)["by_property"]
         except Exception as e:
             print(f"  gen skip {pretty}: {type(e).__name__}: {e}"); continue
+        h = panel.get("hue", {}); d = panel.get("discrimination", {}); s = panel.get("spacing", {})
+        m.update({
+            "hue_hb": h.get("hung_berns"), "hue_ef": h.get("ebner_fairchild"),
+            "hue_mun": h.get("munsell"),
+            "disc_mac": d.get("macadam1942"), "disc_lr": d.get("luo_rigg_ellipses"),
+            "disc_regan": d.get("regan_1994_cvd_ellipses"),
+            "sp_osa": s.get("osa_ucs_1974"),
+        })
+        rows[pretty] = {"is_helm": ck is not None, "scores": m}
+        print(f"  {pretty:18} rt(s/p/r)={m['rt_srgb']:.0e}/{m['rt_p3']:.0e}/{m['rt_rec2020']:.0e} "
+              f"cv={m['grad_cv']:.2f} hue_hb={m['hue_hb']} regan={m['disc_regan']}")
 
-        def _mean(prop):
-            vals = [v for v in panel.get(prop, {}).values() if isinstance(v, (int, float))]
-            return round(float(np.mean(vals)), 3) if vals else None
-
-        rows[pretty] = {
-            "round_trip": geo["round_trip"], "gamut_mono": geo["gamut_mono"],
-            "gamut_smooth": geo["gamut_smooth"], "hue": _mean("hue"),
-            "spacing": _mean("spacing"), "is_helm": ck is not None,
-        }
-        _f = lambda v, s: (s % v) if isinstance(v, (int, float)) else "  —"
-        print(f"  {pretty:20} rt={_f(geo['round_trip'], '%.1e')} mono={_f(geo['gamut_mono'], '%.1f')} "
-              f"smooth={_f(geo['gamut_smooth'], '%.2f')} hue={rows[pretty]['hue']} spacing={rows[pretty]['spacing']}")
-
-    cols = ["round_trip", "gamut_mono", "gamut_smooth", "hue", "spacing"]
-    rank = {c: {} for c in cols}
-    for c in cols:
-        sc = sorted([(v[c], n) for n, v in rows.items() if isinstance(v[c], (int, float))])
-        for i, (_, n) in enumerate(sc, 1):
-            rank[c][n] = i
-    overall = {}
-    for n in rows:
-        rs = [rank[c][n] for c in cols if n in rank[c]]
-        overall[n] = round(sum(rs) / len(rs), 2) if rs else None
-    order = sorted(rows, key=lambda n: overall[n] if overall[n] is not None else 99)
+    groups = [
+        {"label": "Invertibility · round-trip max err (per gamut)", "metrics": [
+            {"key": "rt_srgb", "label": "sRGB"}, {"key": "rt_p3", "label": "P3"},
+            {"key": "rt_rec2020", "label": "Rec2020"}]},
+        {"label": "Gamut-map hue monotonicity (per gamut)", "metrics": [
+            {"key": "gm_mono_srgb", "label": "sRGB"}, {"key": "gm_mono_p3", "label": "P3"},
+            {"key": "gm_mono_rec2020", "label": "Rec2020"}]},
+        {"label": "Gamut-map ΔE smoothness (per gamut)", "metrics": [
+            {"key": "gm_dj_srgb", "label": "sRGB"}, {"key": "gm_dj_p3", "label": "P3"},
+            {"key": "gm_dj_rec2020", "label": "Rec2020"}]},
+        # step-CV (overall.cv_mean) is dominated by the fixed crossing-pair set,
+        # so it barely varies across spaces (all ~1.54) — dropped as
+        # non-discriminating. banding + hue-drift do separate the spaces.
+        {"label": "Gradient evenness", "metrics": [
+            {"key": "grad_band", "label": "banding"},
+            {"key": "grad_drift", "label": "hue-drift°"}]},
+        {"label": "Hue · human data", "metrics": [
+            {"key": "hue_hb", "label": "Hung-Berns"}, {"key": "hue_ef", "label": "Ebner-F."},
+            {"key": "hue_mun", "label": "Munsell"}]},
+        {"label": "Discrimination · human", "metrics": [
+            {"key": "disc_mac", "label": "MacAdam"}, {"key": "disc_lr", "label": "Luo-Rigg"},
+            {"key": "disc_regan", "label": "Regan"}]},
+        {"label": "Spacing · human", "metrics": [{"key": "sp_osa", "label": "OSA-UCS"}]},
+    ]
+    all_keys = [m["key"] for g in groups for m in g["metrics"]]
+    # human datasets = the held-out independence probes → generalization spread
+    human_keys = ["hue_hb", "hue_ef", "hue_mun", "disc_mac", "disc_lr", "disc_regan", "sp_osa"]
+    rank = _ranks(rows, all_keys)
+    for n, v in rows.items():
+        rs = [rank[k][n] for k in all_keys if n in rank.get(k, {})]
+        v["overall_rank"] = round(sum(rs) / len(rs), 2) if rs else None
+        v["scores"]["gen_spread"] = _generalization(rank, human_keys, n)
+    order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 99)
+    groups.append({"label": "Generalization", "metrics": [
+        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 7 human datasets"}]})
     return {
         "title": "Generation — color-synthesis geometry",
-        "subtitle": "Round-trip, gamut-mapping smoothness, and human-data hue/spacing. Lower = better.",
-        "metrics": [
-            {"key": "round_trip", "label": "Round-trip err"},
-            {"key": "gamut_mono", "label": "Gamut hue-mono"},
-            {"key": "gamut_smooth", "label": "Gamut ΔE-jump"},
-            {"key": "hue", "label": "Hue (human)"},
-            {"key": "spacing", "label": "Spacing (human)"},
-        ],
-        "spaces": [
-            {"name": n, "is_helm": rows[n]["is_helm"],
-             "scores": {c: rows[n][c] for c in cols},
-             "ranks": {c: rank[c].get(n) for c in cols},
-             "overall_rank": overall[n]}
-            for n in order
-        ],
+        "subtitle": ("Per-gamut round-trip & gamut-mapping, gradient evenness, and per-dataset "
+                     "human hue/discrimination/spacing. Lower = better; Rank swing low = robust generalist."),
+        "groups": groups,
+        "spaces": [{"name": n, "is_helm": rows[n]["is_helm"],
+                    "scores": rows[n]["scores"], "overall_rank": rows[n]["overall_rank"]}
+                   for n in order],
         "winner": order[0] if order else None,
     }
 
@@ -198,9 +241,6 @@ def main():
     print("── Measurement board ─────────────────────────────")
     meas = measurement_board()
     print(f"  winner: {meas['winner']}")
-    for s in meas["spaces"]:
-        print(f"  {s['name']:22} combvd={s['scores']['combvd']}  macadam={s['scores']['macadam']}  mean={s['scores']['mean']}")
-
     print("\n── Generation board ──────────────────────────────")
     gen = generation_board()
     print(f"  winner: {gen['winner']}")

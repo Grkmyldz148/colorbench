@@ -75,3 +75,16 @@ footer a { color: var(--accent); }
   background: #241f0e; border: 1px solid #4a3f18; border-radius: 8px;
   padding: 9px 13px; font-size: 13px; color: #d9c98c;
 }
+
+/* ── grouped (Epey-style) comparison table ──────────────── */
+th.grolabel {
+  font-size: 11px; font-weight: 700; letter-spacing: .02em;
+  color: var(--helm); background: #17140a; border-bottom: 1px solid var(--line);
+  text-transform: uppercase; padding: 6px 8px; text-align: center; white-space: nowrap;
+}
+th.grp { vertical-align: bottom; }
+#leaderboard th { font-size: 12px; white-space: nowrap; cursor: pointer; }
+#leaderboard th[title] { cursor: help; }
+#leaderboard td { font-size: 13px; text-align: right; white-space: nowrap; }
+#leaderboard td.name { text-align: left; }
+#leaderboard td.rank { text-align: center; color: var(--dim); font-family: var(--mono); }
