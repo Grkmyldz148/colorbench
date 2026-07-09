@@ -583,6 +583,48 @@ def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 3f — OSA-UCS uniform spacing (independent, non-Munsell spacing anchor)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_osa_spacing(space, name="osa_ucs_1974", min_neighbours=3):
+    """OSA-UCS committee atlas: 558 samples on a cuboctahedral lattice where
+    each interior sample is ONE equal perceived colour difference from its 12
+    nearest neighbours (the OSA committee's suprathreshold uniform-spacing
+    design). A perceptually-uniform space maps every sample's neighbours to
+    EQUAL distances; the coefficient of variation of those distances, averaged
+    over samples, measures suprathreshold spacing anisotropy. Lower = better.
+
+    This is the principal spacing dataset INDEPENDENT of Munsell — the held-out
+    anchor for spacing claims (the spacing-consensus ruler is 1/3 Munsell-fit)."""
+    samples = _load_csv(name, "canonical.csv")
+    pairs = _load_csv(name, "neighbor_pairs.csv")
+    if samples is None or pairs is None:
+        return {"name": name, "skipped": "canonical.csv / neighbor_pairs.csv missing"}
+    # xyY -> XYZ (already D65; coords are CIE 1964 10deg, fed directly — the
+    # spacing CV is relative so the observer choice is immaterial)
+    coord = {}
+    for r in samples:
+        Y = float(r["Y10"]) / 100.0
+        xyz = xyY_to_xyz(np.array([float(r["x10"])]), np.array([float(r["y10"])]),
+                         np.array([Y]))[0]
+        coord[r["sample_id"]] = _space_forward(space, np.clip(xyz, 0, None)[None, :])[0]
+    from collections import defaultdict
+    nb = defaultdict(list)
+    for p in pairs:
+        a, b = p["sample_id_1"], p["sample_id_2"]
+        if a in coord and b in coord:
+            nb[a].append(b); nb[b].append(a)
+    cvs = []
+    for s, ns in nb.items():
+        if len(ns) < min_neighbours:
+            continue
+        d = np.array([float(np.sqrt(((coord[s] - coord[n]) ** 2).sum())) for n in ns])
+        if d.mean() > 0:
+            cvs.append(float(d.std() / d.mean()))
+    return {"name": name, "n_centers": len(cvs),
+            "mean_cv": float(np.mean(cvs)) if cvs else None}
+
+
+# ════════════════════════════════════════════════════════════════════════════
 #  JUDGE 4a — unique hues (Xiao 2011): constant-hue test on unique-hue loci
 # ════════════════════════════════════════════════════════════════════════════
 def _load_csv(name, filename):
@@ -904,6 +946,7 @@ REGISTRY = [
     ("hue",           "ebner_fairchild",              judge_constant_hue,            "mean_mad_deg", True),
     ("hue",           "munsell",                      judge_constant_hue,            "mean_mad_deg", True),
     ("hue",           "xiao_unique_hues",             judge_unique_hues,             "mean_mad_deg", True),
+    ("spacing",       "osa_ucs_1974",                 judge_osa_spacing,             "mean_cv",      True),
     ("discrimination","macadam1942",                  judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","luo_rigg_ellipses",            judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","alder1982",                    judge_jnd_ellipse,             "mean_cv",      True),
@@ -929,7 +972,7 @@ REGISTRY = [
 
 # property → which direction is "better" (all our validated keys: lower=better)
 _LOWER_BETTER = {"difference", "hue", "discrimination", "3d_discrim",
-                 "tolerance", "adaptation"}
+                 "tolerance", "spacing", "adaptation"}
 
 
 def evaluate_space_on_pool(space, validated_only=False):
@@ -968,8 +1011,8 @@ def compare_on_pool(space_a, space_b, name_a="A", name_b="B", validated_only=Tru
     fit_a = trained_on_of(space_a)
     fit_b = trained_on_of(space_b)
     for prop in ["difference", "difference_rank", "hue", "discrimination",
-                 "3d_discrim", "tolerance", "hk_mechanism", "adaptation",
-                 "naming", "observer_variance"]:
+                 "3d_discrim", "tolerance", "spacing", "hk_mechanism",
+                 "adaptation", "naming", "observer_variance"]:
         if prop not in ra:
             continue
         lower = prop in _LOWER_BETTER

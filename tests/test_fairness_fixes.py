@@ -285,6 +285,16 @@ def test_new_pool_judges_sane():
         assert entry[4] is False
         assert entry[0] not in hp._LOWER_BETTER
 
+    # OSA-UCS spacing judge (validated): the independent, non-Munsell spacing
+    # anchor — degenerate raw-XYZ must be worse than a real uniform space
+    osa_ok = hp.judge_osa_spacing(ok)
+    osa_raw = hp.judge_osa_spacing(raw)
+    if "skipped" not in osa_ok:
+        assert 0 < osa_ok["mean_cv"] < 1
+        assert osa_raw["mean_cv"] > osa_ok["mean_cv"]
+        entry = [e for e in hp.REGISTRY if e[1] == "osa_ucs_1974"][0]
+        assert entry[4] is True and entry[0] == "spacing"
+
 
 def test_ruler_sensitivity_flag():
     """Gradient metrics ship per-ruler aggregates; compare_spaces flags each
