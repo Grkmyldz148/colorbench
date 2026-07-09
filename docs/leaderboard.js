@@ -35,12 +35,14 @@ loadData().then(data => {
     // flatten metrics from groups, keep group spans for the header
     const groups = b.groups;
     const metricCols = [];
-    groups.forEach(g => g.metrics.forEach(m => metricCols.push({ ...m, group: g.label })));
+    groups.forEach(g => g.metrics.forEach(m =>
+      metricCols.push({ ...m, group: g.label, scored: g.scored !== false })));
 
-    // signed columns (overfit Δrank) aren't "lower=better" — skip best/worst tint
+    // best/worst tint only on SCORED, unsigned columns — diagnostic (CIELab-
+    // referenced) columns are shown plain so they don't imply a winner
     const stat = {};
     metricCols.forEach(m => {
-      if (m.signed) return;
+      if (m.signed || !m.scored) return;
       const vals = b.spaces.map(s => s.scores[m.key]).filter(v => v != null);
       if (vals.length) stat[m.key] = { min: Math.min(...vals), max: Math.max(...vals) };
     });
@@ -60,10 +62,11 @@ loadData().then(data => {
            + `<th class="grp" rowspan="2" data-k="name">${current === "measurement" ? "Model" : "Color space"}</th>`;
     let h2 = "<tr>";
     groups.forEach(g => {
-      h1 += `<th class="grolabel" colspan="${g.metrics.length}">${g.label}</th>`;
+      const dg = g.scored === false ? " diag" : "";
+      h1 += `<th class="grolabel${dg}" colspan="${g.metrics.length}">${g.label}</th>`;
       g.metrics.forEach(m => {
         const t = m.hint ? ` title="${m.hint}"` : "";
-        h2 += `<th data-k="${m.key}" class="${m.key === sortKey ? "sorted" : ""}"${t}>${m.label}${m.hint ? " ⓘ" : ""}</th>`;
+        h2 += `<th data-k="${m.key}" class="${m.key === sortKey ? "sorted" : ""}${dg}"${t}>${m.label}${m.hint ? " ⓘ" : ""}</th>`;
       });
     });
     h1 += "</tr>"; h2 += "</tr>";
@@ -76,8 +79,8 @@ loadData().then(data => {
       body += `<td class="name">${s.name}</td>`;
       metricCols.forEach(m => {
         const v = s.scores[m.key];
-        let cls = "";
-        if (!m.signed && v != null && stat[m.key]) {
+        let cls = m.scored ? "" : "diag";
+        if (m.scored && !m.signed && v != null && stat[m.key]) {
           if (Math.abs(v - stat[m.key].min) < 1e-12) cls = "best";
           else if (Math.abs(v - stat[m.key].max) < 1e-12) cls = "worst";
         }

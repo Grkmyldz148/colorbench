@@ -104,3 +104,8 @@ footer { margin: 40px 0 0; padding-top: 16px; border-top: 1px solid var(--line);
   h1 { font-size: 24px; } body { padding: 0 12px 40px; }
   th, td { padding: 7px 9px; }
 }
+
+/* diagnostic (not-scored, CIELab-referenced) columns — muted */
+th.grolabel.diag { color: #9aa0a8; background: #f2f3f5; font-style: italic; }
+th.diag { color: #9aa0a8; font-weight: 500; }
+td.diag { color: #9aa0a8; }

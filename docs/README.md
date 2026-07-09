@@ -43,24 +43,27 @@ intervals (that lives in `run.py metric` + the fair verdict, not this page).
 synthesis geometry **broken down by gamut** (sRGB / Display-P3 / Rec2020), plus
 per-dataset human checks:
 
-| Group | Columns |
-|---|---|
-| Invertibility · round-trip max err | sRGB · P3 · Rec2020 |
-| Gamut-map hue monotonicity | sRGB · P3 · Rec2020 |
-| Gamut-map ΔE smoothness | sRGB · P3 · Rec2020 |
-| Gradient evenness | banding · hue-drift° |
-| Hue · human data | Hung-Berns · Ebner-Fairchild · Munsell |
-| Discrimination · human | MacAdam 1942 · Luo-Rigg · Regan 1994 |
-| Spacing · human | OSA-UCS |
-| Generalization | Rank swing = worst − best rank over the 7 human datasets |
+| Group | Columns | Scored? |
+|---|---|---|
+| Hue · human data | Hung-Berns · Ebner-Fairchild · Munsell | ✅ |
+| Discrimination · human | MacAdam 1942 · Luo-Rigg · Regan 1994 | ✅ |
+| Spacing · human | OSA-UCS | ✅ |
+| Invertibility (gate) | round-trip max err (worst gamut) | diagnostic |
+| Gamut-map · CIELab-ref | ΔE-jump · hue-mono (worst gamut) | diagnostic |
+| Gradient · CIELab-ref | hue-drift° | diagnostic |
+| Generalization | Rank swing = worst − best rank over the 7 human datasets | — |
 
-**Overall rank** here is the mean of the per-**category** ranks (each of the 7
-groups weighs equally) — *not* the mean of all 19 columns, so the 12 engineering
-columns don't drown the 7 human-data columns, and the near-tied round-trip
-triple counts as a single invertibility vote. It is **deliberately not a single
-quality score**: no space is best at everything (the project's central finding),
-and **Rank swing** makes that explicit — a low swing is a robust generalist, a
-high swing is a narrow specialist (the empirical fingerprint of overfitting).
+**Overall rank is on HUMAN DATA only** — the three human categories (hue,
+discrimination, spacing), each weighing equally. The greyed engineering columns
+are **diagnostics, not scored**: round-trip is a pass/fail invertibility gate,
+and gamut-mapping / gradient are measured in CIELab (`core/metrics/gamut_mapping.py`
+uses `ciede2000` + CIELab hue). A CIELab-referenced ruler structurally flatters
+CIELAB and its transforms — the same *measure-CIELab-with-CIELab* circularity the
+fairness verdict zeroes out — so it must not drive the rank. (Letting it in put
+CIELAB *above* OKLab and genspace, which was the tell.) It is **deliberately not
+a single quality score**: no space is best at everything, and **Rank swing**
+makes that explicit — low = robust generalist, high = narrow specialist (the
+empirical fingerprint of overfitting).
 
 ## Scope
 

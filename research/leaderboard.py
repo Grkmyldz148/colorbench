@@ -212,15 +212,20 @@ def _gen_metrics(space, device):
             return None
         return float(np.mean(vals)) if vals else None
 
-    out = {"rt_srgb": rt_err("srgb_full"), "rt_p3": rt_err("p3_full"),
-           "rt_rec2020": rt_err("rec2020_2M"),
-           "grad_cv": gr.get("overall.cv_mean"), "grad_band": gr.get("overall.banding_mean"),
-           "grad_drift": gr.get("overall.drift_mean")}
+    rts = [rt_err("srgb_full"), rt_err("p3_full"), rt_err("rec2020_2M")]
+    out = {"grad_drift": gr.get("overall.drift_mean"),
+           # invertibility: worst gamut (the 3 are near-tied ~1e-15 except the
+           # two spaces that drop to ~1e-13 — one column carries that signal)
+           "rt_worst": max([v for v in rts if v is not None], default=None)}
+    monos, djs = [], []
     for g, _ in GAMUTS:
         smooth = gm_agg(g, "max_de_jump")
-        mono = gm_agg(g, "non_monotonic_hues")
-        out[f"gm_mono_{g.lower()}"] = None if smooth is None else mono
-        out[f"gm_dj_{g.lower()}"] = smooth
+        djs.append(smooth)
+        monos.append(None if smooth is None else gm_agg(g, "non_monotonic_hues"))
+    good_dj = [v for v in djs if v is not None]
+    good_mono = [v for v in monos if v is not None]
+    out["gm_dj_worst"] = max(good_dj) if good_dj else None
+    out["gm_mono_worst"] = max(good_mono) if good_mono else None
     return out
 
 
@@ -248,59 +253,60 @@ def generation_board():
             "sp_osa": s.get("osa_ucs_1974"),
         })
         rows[pretty] = {"is_helm": ck is not None, "scores": m}
-        print(f"  {pretty:18} rt(s/p/r)={m['rt_srgb']:.0e}/{m['rt_p3']:.0e}/{m['rt_rec2020']:.0e} "
-              f"cv={m['grad_cv']:.2f} hue_hb={m['hue_hb']} regan={m['disc_regan']}")
+        print(f"  {pretty:18} hue_hb={m['hue_hb']:.2f} regan={m['disc_regan']:.3f} "
+              f"osa={m['sp_osa']:.3f} | rt_worst={m['rt_worst']:.0e} gm_dj={m['gm_dj_worst']}")
 
-    groups = [
-        {"label": "Invertibility · round-trip max err (per gamut)", "metrics": [
-            {"key": "rt_srgb", "label": "sRGB"}, {"key": "rt_p3", "label": "P3"},
-            {"key": "rt_rec2020", "label": "Rec2020"}]},
-        {"label": "Gamut-map hue monotonicity (per gamut)", "metrics": [
-            {"key": "gm_mono_srgb", "label": "sRGB"}, {"key": "gm_mono_p3", "label": "P3"},
-            {"key": "gm_mono_rec2020", "label": "Rec2020"}]},
-        {"label": "Gamut-map ΔE smoothness (per gamut)", "metrics": [
-            {"key": "gm_dj_srgb", "label": "sRGB"}, {"key": "gm_dj_p3", "label": "P3"},
-            {"key": "gm_dj_rec2020", "label": "Rec2020"}]},
-        # step-CV (overall.cv_mean) is dominated by the fixed crossing-pair set,
-        # so it barely varies across spaces (all ~1.54) — dropped as
-        # non-discriminating. banding + hue-drift do separate the spaces.
-        {"label": "Gradient evenness", "metrics": [
-            {"key": "grad_band", "label": "banding"},
-            {"key": "grad_drift", "label": "hue-drift°"}]},
-        {"label": "Hue · human data", "metrics": [
+    # SCORED groups drive the overall rank — human-data only, because those are
+    # the only columns measured with an unbiased ruler (real observers).
+    scored_groups = [
+        {"label": "Hue · human data", "scored": True, "metrics": [
             {"key": "hue_hb", "label": "Hung-Berns"}, {"key": "hue_ef", "label": "Ebner-F."},
             {"key": "hue_mun", "label": "Munsell"}]},
-        {"label": "Discrimination · human", "metrics": [
+        {"label": "Discrimination · human", "scored": True, "metrics": [
             {"key": "disc_mac", "label": "MacAdam"}, {"key": "disc_lr", "label": "Luo-Rigg"},
             {"key": "disc_regan", "label": "Regan"}]},
-        {"label": "Spacing · human", "metrics": [{"key": "sp_osa", "label": "OSA-UCS"}]},
+        {"label": "Spacing · human", "scored": True, "metrics": [{"key": "sp_osa", "label": "OSA-UCS"}]},
     ]
-    all_keys = [m["key"] for g in groups for m in g["metrics"]]
-    # human datasets = the held-out independence probes → generalization spread
+    # DIAGNOSTIC groups are shown but NOT scored. Round-trip is a correctness gate
+    # (all pass to ~1e-13). Gamut-mapping & gradient are measured in CIELab /
+    # CIEDE2000 (see core/metrics/gamut_mapping.py) — a CIELab-referenced ruler
+    # that structurally flatters CIELAB and its transforms, exactly the
+    # measure-CIELab-with-CIELab circularity the project excludes from any
+    # verdict. Collapsed to worst-gamut to keep the table desktop-width.
+    diag_groups = [
+        {"label": "Invertibility (gate)", "scored": False, "metrics": [
+            {"key": "rt_worst", "label": "round-trip", "hint": "worst gamut; all pass"}]},
+        {"label": "Gamut-map · CIELab-ref (diagnostic)", "scored": False, "metrics": [
+            {"key": "gm_dj_worst", "label": "ΔE-jump", "hint": "worst gamut; CIELab-referenced"},
+            {"key": "gm_mono_worst", "label": "hue-mono", "hint": "worst gamut; CIELab-referenced"}]},
+        {"label": "Gradient · CIELab-ref", "scored": False, "metrics": [
+            {"key": "grad_drift", "label": "hue-drift°", "hint": "CIELab-referenced"}]},
+    ]
     human_keys = ["hue_hb", "hue_ef", "hue_mun", "disc_mac", "disc_lr", "disc_regan", "sp_osa"]
+    all_keys = [m["key"] for g in scored_groups + diag_groups for m in g["metrics"]]
     rank = _ranks(rows, all_keys)
-    # overall = mean of per-GROUP mean-ranks (each category weighs equally), NOT
-    # mean of all 19 columns. Otherwise the 12 engineering columns (3×round-trip
-    # near-ties + 3×mono + 3×ΔE-jump + 2×gradient) would drown the 7 human-data
-    # columns, and a space's human-hue strength wouldn't surface. Group-balancing
-    # also collapses the near-tied round-trip triple into one invertibility vote.
+    # overall = mean of the SCORED (human) category ranks only — each of the 3
+    # human categories weighs equally; the CIELab-referenced engineering columns
+    # are diagnostics and do not move the ranking.
     for n, v in rows.items():
-        group_ranks = []
-        for g in groups:  # groups here are the 7 scored categories (generalization appended later)
+        grp = []
+        for g in scored_groups:
             grs = [rank[m["key"]][n] for m in g["metrics"] if n in rank.get(m["key"], {})]
             if grs:
-                group_ranks.append(sum(grs) / len(grs))
-        v["overall_rank"] = round(sum(group_ranks) / len(group_ranks), 2) if group_ranks else None
+                grp.append(sum(grs) / len(grs))
+        v["overall_rank"] = round(sum(grp) / len(grp), 2) if grp else None
         v["scores"]["gen_spread"] = _generalization(rank, human_keys, n)
     order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 99)
-    groups.append({"label": "Generalization", "metrics": [
-        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 7 human datasets"}]})
+    groups = scored_groups + diag_groups + [
+        {"label": "Generalization", "scored": True, "metrics": [
+            {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 7 human datasets"}]}]
     return {
         "title": "Generation — color-synthesis geometry",
-        "subtitle": ("Per-gamut round-trip & gamut-mapping, gradient evenness, and per-dataset "
-                     "human hue/discrimination/spacing. Lower = better. Overall = mean of per-CATEGORY "
-                     "ranks (each of the 7 groups weighs equally, so engineering columns don't drown "
-                     "the human data). Rank swing low = robust generalist."),
+        "subtitle": ("Ranked on HUMAN data only — hue (Hung-Berns/Ebner/Munsell), discrimination "
+                     "(MacAdam/Luo-Rigg/Regan), spacing (OSA-UCS), each category weighing equally. "
+                     "The engineering columns are diagnostics: round-trip is a pass/fail gate, and "
+                     "gamut-mapping / gradient are measured in CIELab (a CIELab-referenced ruler that "
+                     "would unfairly flatter CIELAB), so they don't drive the rank. Lower = better."),
         "groups": groups,
         "spaces": [{"name": n, "is_helm": rows[n]["is_helm"],
                     "scores": rows[n]["scores"], "overall_rank": rows[n]["overall_rank"]}
