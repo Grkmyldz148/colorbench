@@ -145,15 +145,30 @@ def _jzazbz_de(lab1, lab2):
     return _uniform_de(lab1, lab2, lambda xyz: colour.XYZ_to_Jzazbz(xyz) * 100.0)
 
 
+def _osa_ucs_de(lab1, lab2):
+    # OSA-UCS (L,j,g) Euclidean — the OSA committee's visual equal-spacing
+    # scale, fit to human uniform-spacing judgments and INDEPENDENT of Munsell.
+    # Adding it dilutes Perceptia-Spacing's Munsell-fit weight (1/3 -> 1/4).
+    import colour
+    return _uniform_de(lab1, lab2, lambda xyz: colour.XYZ_to_OSA_UCS(xyz))
+
+
 def spacing_consensus(lab1, lab2):
-    """Normalized mean of {Perceptia-Spacing, CAM16-UCS, Jzazbz} spacing rulers.
-    Returns a numpy array. Falls back to Perceptia-Spacing alone if colour-science
-    is unavailable."""
+    """Normalized mean of {Perceptia-Spacing, CAM16-UCS, Jzazbz, OSA-UCS}
+    spacing rulers. Returns a numpy array. Falls back to Perceptia-Spacing
+    alone if colour-science is unavailable.
+
+    OSA-UCS (2026-07) was added specifically to reduce the residual Munsell
+    circularity: Perceptia-Spacing is Munsell-fit, so on Munsell-fit candidate
+    generation spaces it can be in-sample. CAM16-UCS, Jzazbz, and OSA-UCS are
+    all Munsell-INDEPENDENT, so 3/4 of the consensus is now non-Munsell and
+    no single member's data can swing the spacing verdict."""
     import numpy as _np
     members = [("psp", perceptia_spacing)]
     try:
         import colour  # noqa: F401
-        members += [("cam16", _cam16ucs_de), ("jzazbz", _jzazbz_de)]
+        members += [("cam16", _cam16ucs_de), ("jzazbz", _jzazbz_de),
+                    ("osa", _osa_ucs_de)]
     except Exception:
         pass
     vals = []
@@ -199,6 +214,7 @@ def spacing_members():
         import colour  # noqa: F401
         members["cam16"] = _cam16ucs_de
         members["jzazbz"] = _jzazbz_de
+        members["osa"] = _osa_ucs_de
     except Exception:
         pass
     out = {}
