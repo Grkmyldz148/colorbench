@@ -307,6 +307,25 @@ def test_new_pool_judges_sane():
         assert entry[0] == "hk_object" and entry[3] == "stress"
 
 
+def test_cvd_simulation_matches_real_observers():
+    """ColorBench's Brettel CVD simulation confusion axes must match the real
+    Regan-Reffin-Mollon (1994) observer ellipse orientations — validates the
+    simulation against real CVD data (a 'judge the tool' regression guard)."""
+    from colorbench.core.cvd_validation import validate_against_regan
+    from colorbench.core import human_pool as hp
+    if not hp.pool_available():
+        return
+    r = validate_against_regan()
+    if "skipped" in r:
+        return
+    for ctype in ("protan", "deutan", "tritan"):
+        assert ctype in r
+        # simulation confusion axis agrees with real observers within ~15 deg
+        assert r[ctype]["mean_axis_diff_deg"] < 15, (ctype, r[ctype])
+    # tritan (pure, well-defined axis) should be the tightest
+    assert r["tritan"]["mean_axis_diff_deg"] < 5
+
+
 def test_ruler_sensitivity_flag():
     """Gradient metrics ship per-ruler aggregates; compare_spaces flags each
     verdict as robust (same winner under every consensus member) or sensitive."""
