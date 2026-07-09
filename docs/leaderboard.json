@@ -1025,6 +1025,27 @@
               "hint": "worst\u2212best rank over 16 datasets"
             }
           ]
+        },
+        {
+          "label": "Robustness \u00b7 physics (gate, not scored)",
+          "scored": false,
+          "metrics": [
+            {
+              "key": "rt_srgb",
+              "label": "RT sRGB",
+              "hint": "round-trip max error (invertibility)"
+            },
+            {
+              "key": "rt_rec2020",
+              "label": "RT Rec2020",
+              "hint": "round-trip max error at wide gamut"
+            },
+            {
+              "key": "nan_rec2020",
+              "label": "Rec2020 NaN%",
+              "hint": "% of wide-gamut points that go non-finite"
+            }
+          ]
         }
       ],
       "spaces": [
@@ -1048,6 +1069,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.30530165072522886,
             "huang_2012_cielab_ellipses": 0.20283907297907858,
             "osa_ucs_1974": 0.08651599517741383,
+            "rt_srgb": 3.774758283725532e-15,
+            "rt_rec2020": 4.218847493575595e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 12
           },
           "overall_rank": 6.95
@@ -1072,6 +1096,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.2938602494775003,
             "huang_2012_cielab_ellipses": 0.21981426585538624,
             "osa_ucs_1974": 0.0815569425299456,
+            "rt_srgb": 3.774758283725532e-15,
+            "rt_rec2020": 4.218847493575595e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 12
           },
           "overall_rank": 7.2
@@ -1096,6 +1123,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.2951867077868469,
             "huang_2012_cielab_ellipses": 0.20232236946749924,
             "osa_ucs_1974": 0.08105668070577621,
+            "rt_srgb": 4.3298697960381105e-15,
+            "rt_rec2020": 5.662137425588298e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 16
           },
           "overall_rank": 7.2
@@ -1120,6 +1150,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.31393156497744656,
             "huang_2012_cielab_ellipses": 0.2057525567880874,
             "osa_ucs_1974": 0.06458022953734804,
+            "rt_srgb": 1.9984014443252818e-15,
+            "rt_rec2020": 1.887379141862766e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 18
           },
           "overall_rank": 7.46
@@ -1144,6 +1177,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.3088632351385558,
             "huang_2012_cielab_ellipses": 0.19179443956906858,
             "osa_ucs_1974": 0.08396719392398659,
+            "rt_srgb": 3.9968028886505635e-15,
+            "rt_rec2020": 5.662137425588298e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 18
           },
           "overall_rank": 7.51
@@ -1168,6 +1204,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.3065439039969759,
             "huang_2012_cielab_ellipses": 0.22746845071377533,
             "osa_ucs_1974": 0.07145951674474123,
+            "rt_srgb": 1.249000902703301e-13,
+            "rt_rec2020": 1.3289369604763124e-13,
+            "nan_rec2020": 0.0,
             "gen_spread": 16
           },
           "overall_rank": 8.44
@@ -1192,6 +1231,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.30511258809223335,
             "huang_2012_cielab_ellipses": 0.22330376665739904,
             "osa_ucs_1974": 0.08297408795605073,
+            "rt_srgb": 2.220446049250313e-15,
+            "rt_rec2020": 2.220446049250313e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 15
           },
           "overall_rank": 8.76
@@ -1216,6 +1258,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.30805041163615127,
             "huang_2012_cielab_ellipses": 0.24608691106132258,
             "osa_ucs_1974": 0.07810234016902777,
+            "rt_srgb": 1.6653345369377348e-15,
+            "rt_rec2020": 1.4432899320127035e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 18
           },
           "overall_rank": 8.92
@@ -1240,6 +1285,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.32758449608956985,
             "huang_2012_cielab_ellipses": 0.1980842341618866,
             "osa_ucs_1974": 0.09055300485238339,
+            "rt_srgb": 3.774758283725532e-15,
+            "rt_rec2020": 5.662137425588298e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 17
           },
           "overall_rank": 8.96
@@ -1264,6 +1312,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.3244278182681516,
             "huang_2012_cielab_ellipses": 0.20527400862969936,
             "osa_ucs_1974": 0.09365164369407467,
+            "rt_srgb": 3.3306690738754696e-15,
+            "rt_rec2020": 4.3298697960381105e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 13
           },
           "overall_rank": 8.98
@@ -1288,6 +1339,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.32414923401039475,
             "huang_2012_cielab_ellipses": 0.19685242087097057,
             "osa_ucs_1974": 0.09101505015330459,
+            "rt_srgb": 1.6653345369377348e-15,
+            "rt_rec2020": 1.5543122344752192e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 20
           },
           "overall_rank": 9.39
@@ -1312,6 +1366,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.37694768215729635,
             "huang_2012_cielab_ellipses": 0.21803147352597532,
             "osa_ucs_1974": 0.07391531732025909,
+            "rt_srgb": 2.886579864025407e-15,
+            "rt_rec2020": 2.6645352591003757e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 18
           },
           "overall_rank": 10.71
@@ -1336,6 +1393,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.3216134169721864,
             "huang_2012_cielab_ellipses": 0.24963465684912145,
             "osa_ucs_1974": 0.07386803104815794,
+            "rt_srgb": 1.3711254354120683e-13,
+            "rt_rec2020": 1.4355183708403274e-13,
+            "nan_rec2020": 0.0,
             "gen_spread": 18
           },
           "overall_rank": 10.93
@@ -1360,6 +1420,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.3715282592449611,
             "huang_2012_cielab_ellipses": 0.21352015787302403,
             "osa_ucs_1974": 0.14843055615223416,
+            "rt_srgb": 1.3322676295501878e-15,
+            "rt_rec2020": 1.3322676295501878e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 18
           },
           "overall_rank": 11.98
@@ -1384,6 +1447,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.4248870311034157,
             "huang_2012_cielab_ellipses": 0.23253885418281484,
             "osa_ucs_1974": 0.21239396234252803,
+            "rt_srgb": 1.9984014443252818e-15,
+            "rt_rec2020": 2.1094237467877974e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 19
           },
           "overall_rank": 13.75
@@ -1408,6 +1474,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.33378632094160265,
             "huang_2012_cielab_ellipses": 0.2759624705780989,
             "osa_ucs_1974": 0.07928743860759922,
+            "rt_srgb": 5.551115123125783e-16,
+            "rt_rec2020": 8.881784197001252e-16,
+            "nan_rec2020": 0.0,
             "gen_spread": 14
           },
           "overall_rank": 13.88
@@ -1432,6 +1501,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.31723309603581523,
             "huang_2012_cielab_ellipses": 0.29297647452914466,
             "osa_ucs_1974": 0.1072489500296462,
+            "rt_srgb": 1.0513812043200232e-13,
+            "rt_rec2020": 1.0402789740737717e-13,
+            "nan_rec2020": 0.0,
             "gen_spread": 18
           },
           "overall_rank": 14.12
@@ -1456,6 +1528,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.3321602709230376,
             "huang_2012_cielab_ellipses": 0.2903245999865637,
             "osa_ucs_1974": 0.12468240354635506,
+            "rt_srgb": 2.6645352591003757e-15,
+            "rt_rec2020": 2.9976021664879227e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 20
           },
           "overall_rank": 15.05
@@ -1480,6 +1555,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.36208313365116274,
             "huang_2012_cielab_ellipses": 0.21795792697018607,
             "osa_ucs_1974": 0.13986074799363504,
+            "rt_srgb": 2.9976021664879227e-15,
+            "rt_rec2020": 2.55351295663786e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 12
           },
           "overall_rank": 15.96
@@ -1504,6 +1582,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.35141477526326076,
             "huang_2012_cielab_ellipses": 0.3001779100612915,
             "osa_ucs_1974": 0.0990209255196623,
+            "rt_srgb": 1.1102230246251565e-15,
+            "rt_rec2020": 1.4432899320127035e-15,
+            "nan_rec2020": 0.0,
             "gen_spread": 10
           },
           "overall_rank": 16.92
@@ -1528,6 +1609,9 @@
             "berns_1991_rit_dupont_tolerance_vectors": 0.47483070618576934,
             "huang_2012_cielab_ellipses": 0.29396082105873594,
             "osa_ucs_1974": 0.3013371437963689,
+            "rt_srgb": 0.00012945575257550246,
+            "rt_rec2020": 0.0001293235661965486,
+            "nan_rec2020": 0.0,
             "gen_spread": 20
           },
           "overall_rank": 17.93

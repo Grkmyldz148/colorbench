@@ -56,16 +56,49 @@ _ILLUM_NEEDED = {"Lab", "Luv", "DIN99", "ProLab"}
 
 
 class ColourWrapper:
-    """A colour-science model as a ColorBench forward-space (numpy forward)."""
+    """A colour-science model as a ColorBench forward-space (numpy forward+inverse)."""
     def __init__(self, name):
         self.name = PRETTY.get(name, name)
         self._f = getattr(colour, f"XYZ_to_{name}")
+        self._i = getattr(colour, f"{name}_to_XYZ", None)
         self._illum = name in _ILLUM_NEEDED
 
     def forward(self, xyz):
         xyz = np.atleast_2d(np.asarray(xyz, float))
         out = self._f(xyz, _D65) if self._illum else self._f(xyz)
         return np.asarray(out, float)
+
+    def inverse(self, coords):
+        coords = np.atleast_2d(np.asarray(coords, float))
+        out = self._i(coords, _D65) if self._illum else self._i(coords)
+        return np.asarray(out, float)
+
+
+# ── Robustness gate: pure physics (round-trip + wide-gamut finiteness), no
+# rival-space ruler. Measures whether a space produces valid, invertible colors
+# across the sRGB / Rec2020 gamuts — it can't flatter any family because it
+# compares only to the identity and to "is this a finite number". Not scored.
+def _sample_gamut_xyz(cs_name, n=20000, seed=0):
+    cs = colour.RGB_COLOURSPACES[cs_name]
+    rgb = np.random.RandomState(seed).rand(n, 3)
+    return np.asarray(colour.RGB_to_XYZ(rgb, cs), float)
+
+
+def _robustness(fwd, inv):
+    out = {"rt_srgb": None, "rt_rec2020": None, "nan_rec2020": None}
+    for key, csname in [("rt_srgb", "sRGB"), ("rt_rec2020", "ITU-R BT.2020")]:
+        try:
+            xyz = _sample_gamut_xyz(csname)
+            c = np.asarray(fwd(xyz), float)
+            back = np.asarray(inv(c), float)
+            fin = np.isfinite(c).all(-1) & np.isfinite(back).all(-1)
+            if key == "rt_rec2020":
+                out["nan_rec2020"] = round(100.0 * float((~fin).mean()), 1)
+            out[key] = float(np.abs(xyz[fin] - back[fin]).max()) if fin.any() else None
+        except Exception:
+            if key == "rt_rec2020":
+                out["nan_rec2020"] = 100.0
+    return out
 
 
 def _ranks(rows, keys):
@@ -231,6 +264,7 @@ def generation_board():
     except Exception as e:
         print(f"  genspace skipped: {e}")
 
+    import torch
     rows = {}
     for sp in spaces:
         try:
@@ -243,6 +277,15 @@ def generation_board():
             for key, _ in metrics:
                 v = prop.get(key)
                 sc[key] = float(v) if isinstance(v, (int, float)) else None
+        # robustness gate (physics) — numpy for colour wrappers, torch adapters
+        # for genspace
+        if isinstance(sp, ColourWrapper):
+            rob = _robustness(sp.forward, sp.inverse)
+        else:
+            fwd = lambda x: sp.forward(torch.as_tensor(x, dtype=sp.dtype, device=sp.device)).detach().cpu().numpy()
+            inv = lambda c: sp.inverse(torch.as_tensor(c, dtype=sp.dtype, device=sp.device)).detach().cpu().numpy()
+            rob = _robustness(fwd, inv)
+        sc.update(rob)
         rows[sp.name] = {"is_helm": sp.name.startswith("helmlab"), "scores": sc}
         print(f"  {sp.name:16} hue_hb={sc.get('hung_berns')} koen={sc.get('koenderink_2026_3d_metric_field')} "
               f"rit={sc.get('berns_1991_rit_dupont_tolerance_vectors')}", flush=True)
@@ -263,6 +306,12 @@ def generation_board():
                "metrics": [{"key": k, "label": lb} for k, lb in ms]} for gl, ms in HUMAN]
     groups.append({"label": "Generalization", "scored": True, "metrics": [
         {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 16 datasets"}]})
+    # physics-only robustness gate — NOT scored (no ruler, so no family bias);
+    # flags spaces that lose invertibility or go non-finite at wide gamut
+    groups.append({"label": "Robustness · physics (gate, not scored)", "scored": False, "metrics": [
+        {"key": "rt_srgb", "label": "RT sRGB", "hint": "round-trip max error (invertibility)"},
+        {"key": "rt_rec2020", "label": "RT Rec2020", "hint": "round-trip max error at wide gamut"},
+        {"key": "nan_rec2020", "label": "Rec2020 NaN%", "hint": "% of wide-gamut points that go non-finite"}]})
     return {
         "title": "Generation — match to human vision",
         "subtitle": ("Ranked on the FULL validated human pool — 16 datasets in 5 categories (hue, "

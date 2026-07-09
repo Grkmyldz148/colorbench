@@ -57,7 +57,11 @@
      (Koenderink, Brown 1957, Wyszecki-Fielder, Brown-MacAdam), tolerance
      (RIT-DuPont, Huang) and spacing (OSA-UCS) — each category weighing equally.
      No CIELab-referenced engineering metric (gamut-mapping / gradient) is scored:
-     that ruler structurally flatters CIELAB, so it is left off. <b>Rank swing</b>
+     that ruler structurally flatters CIELAB, so it is left off. The greyed
+     <b>Robustness</b> columns are a physics-only gate (not scored): round-trip
+     invertibility and whether a space stays finite across the Rec2020 gamut —
+     measured against the identity and "is this a finite number", so no rival
+     space can bias it (it flags e.g. Yrg's 1e-4 round-trip). <b>Rank swing</b>
      = worst minus best rank across the datasets — low = robust generalist, high =
      narrow specialist (the empirical fingerprint of overfitting). Colour-science
      spaces use their canonical reference implementations.</p>

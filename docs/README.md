@@ -53,7 +53,7 @@ No CIELab-referenced engineering metric (gamut-mapping / gradient) is scored:
 `core/metrics/gamut_mapping.py` measures in CIELab (`ciede2000` + CIELab hue), a
 CIELab-referenced ruler that structurally flatters CIELAB and its transforms —
 the *measure-CIELab-with-CIELab* circularity the fairness verdict zeroes out.
-(Letting it in put CIELAB *above* OKLab and genspace, which was the tell.) The
+(Letting it in put CIELAB *above* OKLab and genspace, which was the tell.) A physics-only **Robustness gate** (round-trip invertibility + wide-gamut finiteness) is shown as an unscored diagnostic — it compares each space only to the identity and to "is this finite", so no rival space can bias it (it flags e.g. Yrg's 1e-4 round-trip). The
 CAM-UCS family leads — those are appearance models fit to exactly this kind of
 data; **helmlab genspace sits mid-pack** (a hue-focused generation space, not a
 full uniformity model). **Rank swing** = worst − best rank over the 16 datasets;
