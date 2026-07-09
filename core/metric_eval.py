@@ -416,7 +416,26 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
     metric = _load_metric_space(metric_json, repo_root)
     print("done")
 
-    results = {}
+    # Holdout discipline (parallel to the generation-side contamination guard):
+    # a metric space fit on a test dataset scores IN-SAMPLE there, so its STRESS
+    # is not a held-out result. The space declares its fit data via a
+    # "trained_on" list in the params JSON (dataset ids: combvd / macadam1974 /
+    # helmlabfb). Undeclared = unknown → we warn and treat every set as
+    # potentially in-sample rather than silently reporting it as held-out.
+    trained_on = set()
+    try:
+        if str(metric_json).endswith(".json"):
+            decl = json.load(open(metric_json)).get("trained_on")
+            if decl:
+                trained_on = {str(d).strip().lower() for d in decl}
+    except Exception:
+        pass
+    if not trained_on:
+        print("  ⚠ HOLDOUT: metric space declares no 'trained_on' — cannot tell "
+              "which STRESS scores are held-out vs in-sample. Add \"trained_on\": "
+              "[...] to the params JSON. Treating all sets as UNVERIFIED.")
+    results = {"_trained_on": sorted(trained_on),
+               "_holdout": {}}
 
     from .bootstrap import stress_ci
 
@@ -476,6 +495,8 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
         print(f"STRESS = {s:.2f}  (CI95 {lo:.1f}–{hi:.1f})")
 
     results["COMBVD"] = scores_combvd
+    results["_holdout"]["COMBVD"] = "in-sample" if "combvd" in trained_on \
+        else ("held-out" if trained_on else "unverified")
 
     # Per-sub-dataset COMBVD breakdown (if xlsx available)
     combvd_records = load_combvd_from_xlsx(datasets_dir)
@@ -534,6 +555,8 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
             scores_mac[name] = round(s, 2)
             print(f"STRESS = {s:.2f}  (CI95 {lo:.1f}–{hi:.1f})")
         results["MacAdam1974"] = scores_mac
+        results["_holdout"]["MacAdam1974"] = "in-sample" if "macadam1974" in trained_on \
+            else ("held-out" if trained_on else "unverified")
         print(f"  ({len(dv_mac)} pairs)")
     else:
         print("  [skipped — macadam1974/ not found]")
@@ -565,6 +588,8 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
         print(f"Spearman ρ = {rho:.4f}")
 
     results["HumanFeedback_rank_only"] = hscores
+    results["_holdout"]["HumanFeedback"] = "in-sample" if "helmlabfb" in trained_on \
+        else ("held-out" if trained_on else "unverified")
 
     # ── Summary ────────────────────────────────────────────────────────────
     _print_summary(results)
@@ -572,13 +597,19 @@ def run_metric_evaluation(metric_json: str, datasets_dir: str, repo_root: str) -
 
 
 def _print_summary(results: dict):
-    # Only show main datasets (not sub-dataset breakdown, not rank-only sets —
-    # those are ordinal-DV datasets whose STRESS would be an artefact; they get
-    # their own Spearman table below and never enter the avg-STRESS ranking).
+    holdout = results.get("_holdout", {})
+    # Only show main STRESS datasets (not sub-dataset breakdown, not rank-only
+    # sets, not _-prefixed bookkeeping keys).
     main_keys = [k for k in results.keys()
-                 if not k.endswith("_subsets") and not k.endswith("_rank_only")]
+                 if not k.startswith("_")
+                 and not k.endswith("_subsets") and not k.endswith("_rank_only")]
     if not main_keys:
         return
+    if holdout:
+        tag = {"held-out": "held-out ✓", "in-sample": "IN-SAMPLE ⚠",
+               "unverified": "unverified ?"}
+        print("  Holdout status: " + ", ".join(
+            f"{k}={tag.get(holdout.get(k,'unverified'),'?')}" for k in main_keys))
 
     metrics = list(results[main_keys[0]].keys())
     col = 16
@@ -604,11 +635,21 @@ def _print_summary(results: dict):
     print("─" * (20 + col * len(main_keys)))
     print("  ★ = best in column  |  lower STRESS = better\n")
 
-    # Rank by average STRESS across available datasets
-    print("  Average STRESS across datasets:")
+    # Rank by average STRESS. When the metric space declared its training data,
+    # rank on HELD-OUT sets only — an in-sample STRESS is not a generalization
+    # result and must not inflate the average (parallel to the generation-side
+    # contamination guard).
+    declared = any(v in ("held-out", "in-sample") for v in holdout.values())
+    avg_keys = [k for k in main_keys
+                if not (declared and holdout.get(k) == "in-sample")]
+    label = "HELD-OUT sets only" if declared else "all sets (holdout unverified)"
+    print(f"  Average STRESS ({label}):")
+    if declared and len(avg_keys) < len(main_keys):
+        dropped = [k for k in main_keys if k not in avg_keys]
+        print(f"    (excluding in-sample: {', '.join(dropped)})")
     avgs = {}
     for m in metrics:
-        vals = [results[d][m] for d in main_keys if m in results.get(d, {})]
+        vals = [results[d][m] for d in avg_keys if m in results.get(d, {})]
         avgs[m] = round(sum(vals) / len(vals), 2) if vals else None
 
     ranked = sorted([(v, k) for k, v in avgs.items() if v is not None])
