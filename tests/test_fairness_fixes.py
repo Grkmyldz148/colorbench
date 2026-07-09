@@ -295,6 +295,17 @@ def test_new_pool_judges_sane():
         entry = [e for e in hp.REGISTRY if e[1] == "osa_ucs_1974"][0]
         assert entry[4] is True and entry[0] == "spacing"
 
+    # Fairchild-Pirrotta object-colour H-K lightness (diagnostic): lower STRESS =
+    # candidate lightness predicts observed H-K lightness better; degenerate
+    # raw-XYZ (lightness = Y) must be far worse than a perceptual lightness
+    fp_ok = hp.judge_fp_lightness(ok)
+    fp_raw = hp.judge_fp_lightness(raw)
+    if "skipped" not in fp_ok:
+        assert 0 < fp_ok["stress"] < 20
+        assert fp_raw["stress"] > fp_ok["stress"] + 10
+        entry = [e for e in hp.REGISTRY if e[1] == "fairchild_pirrotta_1991"][0]
+        assert entry[0] == "hk_object" and entry[3] == "stress"
+
 
 def test_ruler_sensitivity_flag():
     """Gradient metrics ship per-ruler aggregates; compare_spaces flags each

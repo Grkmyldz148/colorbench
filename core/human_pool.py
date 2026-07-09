@@ -868,6 +868,41 @@ def judge_hk(space, name="wyszecki_1967_osa_tiles", adapt_d65=True):
 
 
 # ════════════════════════════════════════════════════════════════════════════
+#  JUDGE 5b — Fairchild-Pirrotta object-colour H-K (real surface-colour lightness)
+# ════════════════════════════════════════════════════════════════════════════
+def judge_fp_lightness(space, name="fairchild_pirrotta_1991", adapt_d65=True):
+    """Fairchild-Pirrotta 1991: 11 observers matched achromatic lightness to 36
+    chromatic Munsell papers, giving each surface's H-K-corrected perceptual
+    lightness (chromatic surfaces look LIGHTER than their L*, growing with
+    chroma). This judge scores how well the candidate space's LIGHTNESS predicts
+    that observed lightness — scale-optimal STRESS, lower = better. Plain CIELab
+    L* sits at the no-H-K baseline (~11); a lightness that captures the
+    chroma-dependent boost scores lower. The real OBJECT-colour counterpart to
+    the aperture-colour H-K sets."""
+    rows = load_canonical(name)
+    cols = rows[0].keys()
+    need = {"L_star", "C_star", "h_deg", "observed_lightness"}
+    if not need.issubset(cols):
+        return {"name": name, "skipped": "not fp hk_lightness schema",
+                "available": list(cols)}
+    white = _white_for("illuminant C")
+    Lc, obs = [], []
+    for r in rows:
+        L = float(r["L_star"]); C = float(r["C_star"]); h = math.radians(float(r["h_deg"]))
+        lab = np.array([[L, C * math.cos(h), C * math.sin(h)]])
+        xyz = lab_to_xyz(lab, white)
+        if adapt_d65:
+            xyz = cat_to_d65(xyz, white)
+        Lc.append(_space_forward(space, np.clip(xyz, 0, None))[0, 0])
+        obs.append(float(r["observed_lightness"]))
+    from .metric_eval import stress
+    return {"name": name, "n": len(rows),
+            "stress": float(stress(np.array(Lc), np.array(obs))),
+            "note": "lower = candidate lightness predicts observed (H-K) "
+                    "lightness better; CIELab L* baseline ~11 (diagnostic)"}
+
+
+# ════════════════════════════════════════════════════════════════════════════
 #  JUDGE 6 — corresponding_colors → CAT prediction (Bradford) error
 # ════════════════════════════════════════════════════════════════════════════
 def judge_corresponding(space, name="breneman1987"):
@@ -965,6 +1000,7 @@ REGISTRY = [
     ("hk_mechanism",  "wyszecki_1967_osa_tiles",      judge_hk,                      "spearman_rho", False),
     ("hk_mechanism",  "zhang_2023_laser_display_brightness", judge_hk,               "spearman_rho", False),
     ("hk_mechanism",  "sanders_wyszecki_1964_HK",     judge_hk,                      "spearman_rho", False),
+    ("hk_object",     "fairchild_pirrotta_1991",      judge_fp_lightness,            "stress",       False),  # object-colour H-K lightness prediction (lower=better)
     ("adaptation",    "corresponding_colours",        judge_corresponding,           "mean_de",      False),
     ("naming",        "wcs",                          judge_wcs_naming,              "ratio",        False),  # naming ~space-insensitive
     ("observer_variance", "asano_observers",          judge_observer_metamerism,     "mean_spread_graysteps", False),  # no canonical direction
@@ -972,7 +1008,7 @@ REGISTRY = [
 
 # property → which direction is "better" (all our validated keys: lower=better)
 _LOWER_BETTER = {"difference", "hue", "discrimination", "3d_discrim",
-                 "tolerance", "spacing", "adaptation"}
+                 "tolerance", "spacing", "hk_object", "adaptation"}
 
 
 def evaluate_space_on_pool(space, validated_only=False):
@@ -1011,8 +1047,8 @@ def compare_on_pool(space_a, space_b, name_a="A", name_b="B", validated_only=Tru
     fit_a = trained_on_of(space_a)
     fit_b = trained_on_of(space_b)
     for prop in ["difference", "difference_rank", "hue", "discrimination",
-                 "3d_discrim", "tolerance", "spacing", "hk_mechanism",
-                 "adaptation", "naming", "observer_variance"]:
+                 "3d_discrim", "tolerance", "spacing", "hk_object",
+                 "hk_mechanism", "adaptation", "naming", "observer_variance"]:
         if prop not in ra:
             continue
         lower = prop in _LOWER_BETTER
