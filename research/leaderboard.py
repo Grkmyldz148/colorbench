@@ -135,16 +135,16 @@ GEN_SCORED = [
 ]
 # measurement = difference / discrimination properties (forward-geometry)
 MEAS_GEOM = [
-    ("Discrimination · human", "discrimination", [
+    ("Discrimination · THRESHOLD JND · human", "discrimination", [
         ("macadam1942", "MacAdam42"), ("luo_rigg_ellipses", "Luo-Rigg"),
         ("alder1982", "Alder"), ("regan_1994_cvd_ellipses", "Regan"),
         ("hong_2025_ellipsoids", "Hong")]),
-    ("3-D discrimination · human", "3d_discrim", [
+    ("3-D discrimination · THRESHOLD JND · human", "3d_discrim", [
         ("koenderink_2026_3d_metric_field", "Koenderink"),
         ("brown_1957_12obs_ellipsoids", "Brown-57"),
         ("wyszecki_fielder_1971_ellipsoids", "Wyszecki-F"),
         ("brown_macadam_1949_ellipsoids", "Brown-MacAdam")]),
-    ("Tolerance · human", "tolerance", [
+    ("Tolerance · near-threshold · human", "tolerance", [
         ("berns_1991_rit_dupont_tolerance_vectors", "RIT-DuPont"),
         ("huang_2012_cielab_ellipses", "Huang")]),
 ]
@@ -354,10 +354,10 @@ def measurement_board(fwd):
     order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 999)
 
     groups = [
-        {"label": "Difference · STRESS (COMBVD components; possible in-sample)", "metrics": [
+        {"label": "Difference · SUPRATHRESHOLD STRESS (COMBVD; possible in-sample)", "metrics": [
             {"key": "bfd", "label": "BFD-P"}, {"key": "leeds", "label": "Leeds"},
             {"key": "witt", "label": "Witt"}, {"key": "rit", "label": "RIT-DuPont"}]},
-        {"label": "Difference · held-out", "metrics": [{"key": "macadam", "label": "MacAdam 74"}]},
+        {"label": "Difference · suprathreshold, held-out", "metrics": [{"key": "macadam", "label": "MacAdam 74"}]},
     ]
     for gl, prop, metrics in MEAS_GEOM:
         groups.append({"label": gl, "metrics": [{"key": k, "label": lb} for k, lb in metrics]})
@@ -369,13 +369,15 @@ def measurement_board(fwd):
         {"key": "gen_spread", "label": "Rank swing", "hint": "worst-best rank"}]})
     return {
         "title": "Measurement - perceptual accuracy (color difference)",
-        "subtitle": ("How accurately a model represents human color DIFFERENCE. Every entrant scores "
-                     "with its OWN ΔE on all of it: difference prediction = STRESS (+CI95 on hover); "
-                     "discrimination / 3-D / tolerance = JND-ellipse roundness (a pure distance model "
-                     "like metricspace or CIEDE2000 is scored with its own distance on the same "
-                     "ellipses, not blank). Overall = one equal vote per difference + discrimination "
-                     "+ 3-D + tolerance dataset. Lower = better; grey appearance diagnostics are shown "
-                     "not scored (they need forward coordinates, which distance models lack)."),
+        "subtitle": ("How accurately a model represents human color DIFFERENCE, each entrant with its "
+                     "OWN ΔE. TWO REGIMES: the Difference columns are SUPRATHRESHOLD - the magnitude "
+                     "of clearly-perceptible differences (ΔE ~1-10, STRESS on COMBVD; +CI95 on hover); "
+                     "discrimination / 3-D / tolerance are THRESHOLD - just-noticeable JND-ellipse "
+                     "roundness. A model can lead one regime and not the other: metricspace (fit to "
+                     "suprathreshold COMBVD) tops Difference, while the CAM 'uniform color spaces' are "
+                     "built for threshold isotropy and lead discrimination. A pure distance model is "
+                     "scored on the ellipses with its own distance (not blank). Overall = one equal "
+                     "vote per dataset; grey appearance diagnostics are shown, not scored."),
         "holdout_note": ("metricspace is fit to COMBVD, so its BFD-P/Leeds/Witt/RIT scores may be "
                          "in-sample; on the held-out MacAdam 1974 it does NOT win (CAM16-UCS does). "
                          "Overfit Δrank (metricspace only) = held-out rank - mean in-sample rank."),

@@ -3,11 +3,11 @@
   "boards": {
     "measurement": {
       "title": "Measurement - perceptual accuracy (color difference)",
-      "subtitle": "How accurately a model represents human color DIFFERENCE. Every entrant scores with its OWN \u0394E on all of it: difference prediction = STRESS (+CI95 on hover); discrimination / 3-D / tolerance = JND-ellipse roundness (a pure distance model like metricspace or CIEDE2000 is scored with its own distance on the same ellipses, not blank). Overall = one equal vote per difference + discrimination + 3-D + tolerance dataset. Lower = better; grey appearance diagnostics are shown not scored (they need forward coordinates, which distance models lack).",
+      "subtitle": "How accurately a model represents human color DIFFERENCE, each entrant with its OWN \u0394E. TWO REGIMES: the Difference columns are SUPRATHRESHOLD - the magnitude of clearly-perceptible differences (\u0394E ~1-10, STRESS on COMBVD; +CI95 on hover); discrimination / 3-D / tolerance are THRESHOLD - just-noticeable JND-ellipse roundness. A model can lead one regime and not the other: metricspace (fit to suprathreshold COMBVD) tops Difference, while the CAM 'uniform color spaces' are built for threshold isotropy and lead discrimination. A pure distance model is scored on the ellipses with its own distance (not blank). Overall = one equal vote per dataset; grey appearance diagnostics are shown, not scored.",
       "holdout_note": "metricspace is fit to COMBVD, so its BFD-P/Leeds/Witt/RIT scores may be in-sample; on the held-out MacAdam 1974 it does NOT win (CAM16-UCS does). Overfit \u0394rank (metricspace only) = held-out rank - mean in-sample rank.",
       "groups": [
         {
-          "label": "Difference \u00b7 STRESS (COMBVD components; possible in-sample)",
+          "label": "Difference \u00b7 SUPRATHRESHOLD STRESS (COMBVD; possible in-sample)",
           "metrics": [
             {
               "key": "bfd",
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "label": "Difference \u00b7 held-out",
+          "label": "Difference \u00b7 suprathreshold, held-out",
           "metrics": [
             {
               "key": "macadam",
@@ -37,7 +37,7 @@
           ]
         },
         {
-          "label": "Discrimination \u00b7 human",
+          "label": "Discrimination \u00b7 THRESHOLD JND \u00b7 human",
           "metrics": [
             {
               "key": "macadam1942",
@@ -62,7 +62,7 @@
           ]
         },
         {
-          "label": "3-D discrimination \u00b7 human",
+          "label": "3-D discrimination \u00b7 THRESHOLD JND \u00b7 human",
           "metrics": [
             {
               "key": "koenderink_2026_3d_metric_field",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "label": "Tolerance \u00b7 human",
+          "label": "Tolerance \u00b7 near-threshold \u00b7 human",
           "metrics": [
             {
               "key": "berns_1991_rit_dupont_tolerance_vectors",

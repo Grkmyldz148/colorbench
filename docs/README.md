@@ -30,6 +30,8 @@ with its own ΔE (metricspace = learned distance; CIEDE2000 / CIE94 = formulas;
 every colour-science space = Euclidean ΔE), **one equal vote per source**. Hover
 for **CI95**.
 
+**Two regimes.** The Difference columns are **suprathreshold** (the magnitude of clearly-perceptible differences, ΔE ~1-10). Discrimination / 3-D / tolerance are **threshold** (just-noticeable JND-ellipse roundness). A model can lead one and not the other: metricspace, fit to suprathreshold COMBVD, tops Difference; the CAM *uniform color spaces* are built for threshold isotropy and lead discrimination.
+
 Additional measurement columns, each judged with the entrant's OWN ΔE - a pure
 distance model (metricspace / CIEDE2000 / CIE94) is scored on the same ellipses
 with its own distance, so it competes here too, not blank:
