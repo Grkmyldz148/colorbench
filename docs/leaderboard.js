@@ -18,7 +18,7 @@ loadData().then(data => {
   const table = document.getElementById("leaderboard");
 
   function fmt(v, key, signed) {
-    if (v == null) return "—";
+    if (v == null) return "";
     if (String(key).startsWith("rt_")) return v.toExponential(1);
     if (signed) return (v > 0 ? "+" : "") + v;
     if (Number.isInteger(v)) return String(v);
@@ -38,7 +38,7 @@ loadData().then(data => {
     groups.forEach(g => g.metrics.forEach(m =>
       metricCols.push({ ...m, group: g.label, scored: g.scored !== false })));
 
-    // best/worst tint only on SCORED, unsigned columns — diagnostic (CIELab-
+    // best/worst tint only on SCORED, unsigned columns - diagnostic (CIELab-
     // referenced) columns are shown plain so they don't imply a winner
     const stat = {};
     metricCols.forEach(m => {
@@ -76,9 +76,8 @@ loadData().then(data => {
 
     let body = "<tbody>";
     rows.forEach((s, i) => {
-      const helm = s.is_helm;
-      body += `<tr class="${helm ? "helm " : ""}${sortKey === "overall_rank" && i === 0 ? "rank-1" : ""}">`;
-      body += `<td class="rank cfreeze1">${s.overall_rank == null ? "—" : s.overall_rank}</td>`;
+      body += `<tr class="${sortKey === "overall_rank" && i === 0 ? "rank-1" : ""}">`;
+      body += `<td class="rank cfreeze1">${s.overall_rank == null ? "" : s.overall_rank}</td>`;
       body += `<td class="name cfreeze2">${s.name}</td>`;
       metricCols.forEach(m => {
         const v = s.scores[m.key];
@@ -88,7 +87,7 @@ loadData().then(data => {
           else if (Math.abs(v - stat[m.key].max) < 1e-12) cls = "worst";
         }
         const ci = s.ci && s.ci[m.key];
-        const tip = ci ? ` title="CI95 ${ci[0]}–${ci[1]}"` : "";
+        const tip = ci ? ` title="CI95 ${ci[0]}-${ci[1]}"` : "";
         body += `<td class="${cls}"${tip}>${fmt(v, m.key, m.signed)}</td>`;
       });
       body += "</tr>";

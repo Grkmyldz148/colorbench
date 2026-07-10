@@ -77,7 +77,7 @@ th.grp { vertical-align: bottom; }
 #leaderboard th { font-size: 12px; }
 #leaderboard th[title] { cursor: help; }
 
-/* frozen rank + name columns — class-based (NOT :first-child, which would also
+/* frozen rank + name columns - class-based (NOT :first-child, which would also
    freeze row-2's first metric cell in the grouped header and misalign it). */
 .cfreeze1, .cfreeze2 { position: sticky; z-index: 2; }
 .cfreeze1 { left: 0; width: 54px; min-width: 54px; max-width: 54px; text-align: center; }
@@ -92,7 +92,6 @@ thead .cfreeze1, thead .cfreeze2 { background: var(--alt); }
 tbody tr:nth-child(odd) .cfreeze1, tbody tr:nth-child(odd) .cfreeze2 { background: #fff; }
 tbody tr:nth-child(even) .cfreeze1, tbody tr:nth-child(even) .cfreeze2 { background: var(--alt); }
 tbody tr:hover .cfreeze1, tbody tr:hover .cfreeze2 { background: var(--accentbg) !important; }
-tr.helm .cfreeze1, tr.helm .cfreeze2 { background: var(--helmbg) !important; }
 
 tbody td { font-family: var(--mono); color: var(--text); border-top: 1px solid var(--line); }
 tbody tr:nth-child(even) td { background: var(--alt); }
@@ -105,12 +104,6 @@ td.best { color: var(--win); font-weight: 700; background: var(--winbg) !importa
 td.worst { color: var(--bad); background: var(--badbg) !important; }
 .rank-1 td.rank { color: var(--win); font-weight: 700; }
 
-/* helmlab row highlight */
-tr.helm td { background: var(--helmbg) !important; }
-tr.helm:hover td { background: #fdeec4 !important; }
-tr.helm td.name { color: var(--helm); font-weight: 700; }
-tr.helm td.name::after { content: " ★"; }
-
 footer { margin: 40px 0 0; padding-top: 16px; border-top: 1px solid var(--line);
   color: var(--dim); font-size: 13px; }
 .method { font-size: 12px; margin-top: 8px; line-height: 1.55; max-width: 1000px; }
@@ -120,7 +113,7 @@ footer { margin: 40px 0 0; padding-top: 16px; border-top: 1px solid var(--line);
   th, td { padding: 7px 9px; }
 }
 
-/* diagnostic (not-scored, CIELab-referenced) columns — muted */
+/* diagnostic (not-scored, CIELab-referenced) columns - muted */
 th.grolabel.diag { color: #9aa0a8; background: #f2f3f5; font-style: italic; }
 th.diag { color: #9aa0a8; font-weight: 500; }
 td.diag { color: #9aa0a8; }

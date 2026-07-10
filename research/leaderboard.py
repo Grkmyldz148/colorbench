@@ -1,26 +1,26 @@
-"""Build the ColorBench leaderboard — comprehensive, permanent, cleanly split.
+"""Build the ColorBench leaderboard - comprehensive, permanent, cleanly split.
 
 TWO boards, and each one carries ONLY the metrics that belong to its axis:
 
-  MEASUREMENT — "how accurately does the space represent human color perception?"
+  MEASUREMENT - "how accurately does the space represent human color perception?"
       Everything about DIFFERENCE / discrimination:
-        · difference prediction — STRESS (+ CI95) on 5 sources (COMBVD's BFD-P /
+        · difference prediction - STRESS (+ CI95) on 5 sources (COMBVD's BFD-P /
           Leeds / Witt / RIT-DuPont components + held-out MacAdam 1974), each
           model with its own ΔE (metricspace = learned distance; CIEDE2000 /
           CIE94 = formulas; every colour space = Euclidean ΔE)
         · discrimination (JND-ellipse roundness), 3-D discrimination, tolerance
         · appearance diagnostics: H-K brightness/lightness, chromatic
           adaptation, observer metamerism
-      This is metricspace's home. Difference formulas show "—" on the
+      This is metricspace's home. Difference formulas show "-" on the
       forward-geometry columns (they aren't spaces).
 
-  GENERATION — "how well does the space GENERATE color (gradients, palettes)?"
+  GENERATION - "how well does the space GENERATE color (gradients, palettes)?"
       Only the properties that decide generation quality:
-        · hue-constancy (Hung-Berns, Ebner-Fairchild, Munsell, Xiao) — gradients
+        · hue-constancy (Hung-Berns, Ebner-Fairchild, Munsell, Xiao) - gradients
           and shades must keep their hue
-        · spacing (OSA-UCS) — even perceptual steps (no banding)
+        · spacing (OSA-UCS) - even perceptual steps (no banding)
         · robustness gate (physics): round-trip invertibility + wide-gamut
-          finiteness — can you generate valid color across gamuts
+          finiteness - can you generate valid color across gamuts
       This is genspace's home. Discrimination / tolerance are DIFFERENCE
       properties and live on the measurement board, not here.
 
@@ -262,7 +262,7 @@ def measurement_board(fwd):
             lo, hi = stress_ci(de[ok], dv[ok])
             rows[name]["ci"][key] = [round(float(lo), 1), round(float(hi), 1)]
 
-    # genspace difference via its own forward (torch) — compute Euclidean ΔE
+    # genspace difference via its own forward (torch) - compute Euclidean ΔE
     if "helmlab genspace" in rows:
         import torch
         gsp = _build_genspace()
@@ -297,7 +297,7 @@ def measurement_board(fwd):
         v["scores"]["mean_diff"] = round(float(np.mean([rows[name]["scores"][k]
                                     for k in diff_keys if isinstance(rows[name]["scores"].get(k), (int, float))])), 2) \
             if any(isinstance(rows[name]["scores"].get(k), (int, float)) for k in diff_keys) else None
-        # rank on DIFFERENCE prediction — the one task every entrant shares (a
+        # rank on DIFFERENCE prediction - the one task every entrant shares (a
         # difference-only formula must not win just because it's judged on its
         # single strength while full spaces are judged on everything).
         # Discrimination / 3-D / tolerance are shown as additional measurement
@@ -325,18 +325,18 @@ def measurement_board(fwd):
                        "metrics": [{"key": k, "label": lb} for k, lb in metrics]})
     groups.append({"label": "Generalization", "metrics": [
         {"key": "overfit", "label": "Overfit Δrank", "signed": True, "hint": "helmlab only"},
-        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank"}]})
+        {"key": "gen_spread", "label": "Rank swing", "hint": "worst-best rank"}]})
     return {
-        "title": "Measurement — perceptual accuracy (color difference)",
+        "title": "Measurement - perceptual accuracy (color difference)",
         "subtitle": ("How accurately a space represents human color DIFFERENCE. Difference prediction "
                      "= STRESS (+CI95 on hover), each model with its own ΔE; the geometry columns "
-                     "(discrimination / 3-D / tolerance) are JND-ellipse roundness — difference "
-                     "formulas show — there (they aren't spaces). Lower = better except ↑ columns; "
+                     "(discrimination / 3-D / tolerance) are JND-ellipse roundness - difference "
+                     "formulas are blank there (they aren't spaces). Lower = better except up-arrow "
                      "grey = shown not scored. Overall = mean of the difference + discrimination + "
                      "3-D + tolerance category ranks."),
         "holdout_note": ("metricspace is fit to COMBVD, so its BFD-P/Leeds/Witt/RIT scores may be "
                          "in-sample; on the held-out MacAdam 1974 it does NOT win (CAM16-UCS does). "
-                         "Overfit Δrank (metricspace only) = held-out rank − mean in-sample rank."),
+                         "Overfit Δrank (metricspace only) = held-out rank - mean in-sample rank."),
         "groups": groups,
         "spaces": [{"name": n, "is_helm": rows[n]["is_helm"], "scores": rows[n]["scores"],
                     "ci": rows[n]["ci"], "overall_rank": rows[n]["overall_rank"]} for n in order],
@@ -365,16 +365,16 @@ def generation_board(fwd):
     groups = [{"label": gl, "metrics": [{"key": k, "label": lb} for k, lb in ms]}
               for gl, _, ms in GEN_SCORED]
     groups.append({"label": "Generalization", "metrics": [
-        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best over hue+spacing"}]})
+        {"key": "gen_spread", "label": "Rank swing", "hint": "worst-best over hue+spacing"}]})
     groups.append({"label": "Robustness · physics (gate, not scored)", "scored": False, "metrics": [
         {"key": "rt_srgb", "label": "RT sRGB", "hint": "round-trip max error"},
         {"key": "rt_rec2020", "label": "RT Rec2020", "hint": "round-trip at wide gamut"},
         {"key": "nan_rec2020", "label": "Rec2020 NaN%", "hint": "% non-finite at wide gamut"}]})
     return {
-        "title": "Generation — color-synthesis quality",
+        "title": "Generation - color-synthesis quality",
         "subtitle": ("Only generation-relevant properties: hue-constancy (gradients & shades keep "
                      "their hue) and even spacing (no banding), plus a physics robustness gate. "
-                     "Difference / discrimination metrics live on the Measurement board — they judge "
+                     "Difference / discrimination metrics live on the Measurement board - they judge "
                      "color-matching, not generation. Lower = better."),
         "groups": groups,
         "spaces": [{"name": n, "is_helm": rows[n]["is_helm"], "scores": rows[n]["scores"],

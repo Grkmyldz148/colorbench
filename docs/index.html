@@ -3,23 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ColorBench Leaderboard — perceptual color spaces ranked on human data</title>
+<title>ColorBench Leaderboard - perceptual color spaces ranked on human data</title>
 <meta name="description" content="Two boards, because measuring color difference and generating color are different jobs. Every model ranked on real psychophysical datasets. helmlab competes as metricspace (measurement) and genspace (generation).">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
   <h1>ColorBench <span class="lb">Leaderboard</span></h1>
-  <p class="sub">Color spaces ranked on real psychophysical datasets — from
+  <p class="sub">Color spaces ranked on real psychophysical datasets - from
     <a href="https://github.com/colour-science/colour">colour-science</a> and
     <b>helmlab</b>. Lower score = closer to human vision.</p>
   <p class="note"><b>Two boards, and each carries only its own metrics.</b>
     <b>Measurement</b> = difference / discrimination (how accurately the space
-    represents human color difference) — metricspace's home. <b>Generation</b> =
+    represents human color difference) - metricspace's home. <b>Generation</b> =
     hue-constancy + even spacing + robustness (what actually decides whether
-    gradients and palettes look right) — genspace's home. A space that's great at
+    gradients and palettes look right) - genspace's home. A space that's great at
     measuring difference (e.g. DIN99) can be poor at generation, and vice-versa,
-    so we never mix the two. <span class="ak">Ak koyun kara koyun.</span></p>
+    so we never mix the two.</p>
 </header>
 
 <nav id="tabs">
@@ -35,7 +35,7 @@
 
 <section id="board">
   <h3>Full ranking
-    <span class="hint">click any column to sort · lower is better (except ↑ columns) · grey = shown but not scored · <span class="ak">★</span> = helmlab</span></h3>
+    <span class="hint">click any column to sort · lower is better (except ↑ columns) · grey = shown but not scored</span></h3>
   <div class="tablewrap"><table id="leaderboard"></table></div>
 </section>
 
@@ -44,27 +44,27 @@
      · human data from
      <a href="https://github.com/Grkmyldz148/color-perception-datasets">color-perception-datasets</a>
      · <span id="gen"></span></p>
-  <p class="method"><b>Measurement</b> ranks on <b>difference prediction</b> —
+  <p class="method"><b>Measurement</b> ranks on <b>difference prediction</b> -
      STRESS (hover for CI95) on 5 independent sources (COMBVD's BFD-P / Leeds /
      Witt / RIT-DuPont components + held-out MacAdam 1974), each entrant with its
      own ΔE (metricspace = learned distance; CIEDE2000 / CIE94 = formulas; every
      colour space = Euclidean ΔE), one equal vote per source so no single dataset
      dominates. The <b>discrimination / 3-D / tolerance</b> columns are additional
-     measurement metrics (JND-ellipse roundness) shown for the spaces — difference
-     formulas show — there, as they aren't spaces. <b>Overfit Δrank</b>
-     (metricspace only) = held-out rank − mean in-sample rank; on the held-out
+     measurement metrics (JND-ellipse roundness) shown for the spaces - difference
+     formulas are blank there, as they aren't spaces. <b>Overfit Δrank</b>
+     (metricspace only) = held-out rank - mean in-sample rank; on the held-out
      MacAdam it does not win. <b>Generation</b> ranks on the properties that
      actually decide synthesis quality: <b>hue-constancy</b> (Hung-Berns,
-     Ebner-Fairchild, Munsell, Xiao — gradients keep their hue) and <b>even
-     spacing</b> (OSA-UCS — no banding), one vote per dataset. Difference /
-     discrimination metrics are NOT here — they judge color-matching, not
+     Ebner-Fairchild, Munsell, Xiao - gradients keep their hue) and <b>even
+     spacing</b> (OSA-UCS - no banding), one vote per dataset. Difference /
+     discrimination metrics are NOT here - they judge color-matching, not
      generation (a DIN99, great at difference, makes ugly hue-shifting gradients).
      Greyed columns are shown, not scored: appearance <b>diagnostics</b>
      (Helmholtz-Kohlrausch brightness ρ ↑better / object lightness, chromatic
-     adaptation — where CIELAB with no CAT scores ~137 ΔE vs OKLab ~0.3, observer
+     adaptation - where CIELAB with no CAT scores ~137 ΔE vs OKLab ~0.3, observer
      metamerism) and a physics <b>robustness</b> gate (round-trip + wide-gamut
-     finiteness, measured against the identity so no rival space biases it — it
-     flags e.g. Yrg's 1e-4 round-trip). Color naming (WCS) is omitted — it's
+     finiteness, measured against the identity so no rival space biases it - it
+     flags e.g. Yrg's 1e-4 round-trip). Color naming (WCS) is omitted - it's
      space-insensitive (~0.61 everywhere). Colour-science spaces use their
      canonical reference implementations.</p>
 </footer>
