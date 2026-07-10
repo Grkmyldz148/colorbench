@@ -1,27 +1,32 @@
-"""Build the ColorBench leaderboard — the comprehensive, permanent version.
+"""Build the ColorBench leaderboard — comprehensive, permanent, cleanly split.
 
-TWO boards (ölçüm ≠ üretim), every invertible colour-science space + helmlab,
-scored on the FULL validated human-data pool.
+TWO boards, and each one carries ONLY the metrics that belong to its axis:
 
-  MEASUREMENT — "which model best predicts human color difference?"
-      STRESS (+ bootstrap CI95) on 5 independent difference sources (COMBVD
-      unpacked into BFD-P / Leeds / Witt / RIT-DuPont, plus held-out MacAdam
-      1974). Entrants: helmlab metricspace (learned distance), the CIEDE2000 /
-      CIE94 formulas, and every colour-science space via its Euclidean ΔE.
-      Overfit Δrank (helmlab only) + Rank swing.
+  MEASUREMENT — "how accurately does the space represent human color perception?"
+      Everything about DIFFERENCE / discrimination:
+        · difference prediction — STRESS (+ CI95) on 5 sources (COMBVD's BFD-P /
+          Leeds / Witt / RIT-DuPont components + held-out MacAdam 1974), each
+          model with its own ΔE (metricspace = learned distance; CIEDE2000 /
+          CIE94 = formulas; every colour space = Euclidean ΔE)
+        · discrimination (JND-ellipse roundness), 3-D discrimination, tolerance
+        · appearance diagnostics: H-K brightness/lightness, chromatic
+          adaptation, observer metamerism
+      This is metricspace's home. Difference formulas show "—" on the
+      forward-geometry columns (they aren't spaces).
 
-  GENERATION — "which space best matches human vision to generate color in?"
-      Ranked on the FULL validated human pool — 16 datasets across 5 categories:
-      hue (4), discrimination (5), 3-D discrimination (4), tolerance (2),
-      spacing (1) — each category weighing equally. Entrants: every invertible
-      colour-science space + helmlab genspace. Rank swing over all 16 datasets.
-      (No CIELab-referenced engineering metric is scored — that ruler flatters
-      CIELAB; it is left off entirely.)
+  GENERATION — "how well does the space GENERATE color (gradients, palettes)?"
+      Only the properties that decide generation quality:
+        · hue-constancy (Hung-Berns, Ebner-Fairchild, Munsell, Xiao) — gradients
+          and shades must keep their hue
+        · spacing (OSA-UCS) — even perceptual steps (no banding)
+        · robustness gate (physics): round-trip invertibility + wide-gamut
+          finiteness — can you generate valid color across gamuts
+      This is genspace's home. Discrimination / tolerance are DIFFERENCE
+      properties and live on the measurement board, not here.
 
 Writes docs/leaderboard.json + docs/leaderboard-data.js.
 Run:  python3 research/leaderboard.py
 """
-import contextlib
 import io
 import json
 import os
@@ -42,7 +47,6 @@ HELMGEN = "/Volumes/harici_ssd/color-space/helmlab-main-repo/checkpoints/genspac
 HELMMETRIC = "/Volumes/harici_ssd/color-space/helmlab-main-repo/checkpoints/metricspace_v21.json"
 HELM_SRC = "/Volumes/harici_ssd/color-space/helmlab-main-repo/src"
 
-# ── colour-science invertible perceptual/uniform spaces ─────────────────────
 COLOUR_SPACES = ["Lab", "Luv", "IPT", "IPT_Ragoo2021", "Jzazbz", "ICtCp",
                  "ICaCb", "IgPgTg", "Oklab", "DIN99", "ProLab", "Yrg",
                  "hdr_CIELab", "CAM02UCS", "CAM16UCS", "CAM02LCD", "CAM16LCD",
@@ -56,7 +60,6 @@ _ILLUM_NEEDED = {"Lab", "Luv", "DIN99", "ProLab"}
 
 
 class ColourWrapper:
-    """A colour-science model as a ColorBench forward-space (numpy forward+inverse)."""
     def __init__(self, name):
         self.name = PRETTY.get(name, name)
         self._f = getattr(colour, f"XYZ_to_{name}")
@@ -74,10 +77,30 @@ class ColourWrapper:
         return np.asarray(out, float)
 
 
-# ── Robustness gate: pure physics (round-trip + wide-gamut finiteness), no
-# rival-space ruler. Measures whether a space produces valid, invertible colors
-# across the sRGB / Rec2020 gamuts — it can't flatter any family because it
-# compares only to the identity and to "is this a finite number". Not scored.
+def _ranks(rows, keys):
+    rank = {k: {} for k in keys}
+    for k in keys:
+        sc = sorted([(v["scores"][k], n) for n, v in rows.items()
+                     if isinstance(v["scores"].get(k), (int, float))])
+        for i, (_, n) in enumerate(sc, 1):
+            rank[k][n] = i
+    return rank
+
+
+def _swing(rank, keys, name):
+    rs = [rank[k][name] for k in keys if name in rank.get(k, {})]
+    return (max(rs) - min(rs)) if len(rs) >= 2 else None
+
+
+def _overall(rank, keys, name):
+    """DATASET-equal overall: every human dataset is one equal vote (so a
+    property measured by 4 datasets carries 4× the evidence of a 1-dataset one,
+    and no single-dataset category is over-weighted by being alone)."""
+    r = [rank[k][name] for k in keys if name in rank.get(k, {})]
+    return round(sum(r) / len(r), 2) if r else None
+
+
+# ── physics robustness gate (generation) ───────────────────────────────────
 def _sample_gamut_xyz(cs_name, n=20000, seed=0):
     cs = colour.RGB_COLOURSPACES[cs_name]
     rgb = np.random.RandomState(seed).rand(n, 3)
@@ -101,167 +124,39 @@ def _robustness(fwd, inv):
     return out
 
 
-def _ranks(rows, keys):
-    rank = {k: {} for k in keys}
-    for k in keys:
-        sc = sorted([(v["scores"][k], n) for n, v in rows.items()
-                     if isinstance(v["scores"].get(k), (int, float))])
-        for i, (_, n) in enumerate(sc, 1):
-            rank[k][n] = i
-    return rank
-
-
-def _swing(rank, keys, name):
-    rs = [rank[k][name] for k in keys if name in rank.get(k, {})]
-    return (max(rs) - min(rs)) if len(rs) >= 2 else None
-
-
-# ═══════════════════════════ MEASUREMENT board ═════════════════════════════
-def _build_metricspace():
-    if HELM_SRC not in sys.path:
-        sys.path.insert(0, HELM_SRC)
-    from core.metric_eval import _load_metric_space
-    return _load_metric_space(HELMMETRIC, os.path.dirname(HELM_SRC))
-
-
-def measurement_board():
-    from core.metric_eval import (load_combvd_from_xlsx, load_macadam1974,
-                                  _ciede2000, _cie94_de, _cat_to_d65, stress)
-    from core.bootstrap import stress_ci
-    base = data.baseline_dir()
-    metric = _build_metricspace()
-    wrappers = [ColourWrapper(n) for n in COLOUR_SPACES]
-
-    recs = load_combvd_from_xlsx(base)
-    def subset(pred):
-        r = [x for x in recs if pred(x["dataset"])]
-        return ([x["xyz1"] for x in r], [x["xyz2"] for x in r],
-                [x["white"] for x in r], [x["dv"] for x in r])
-    mx1, mx2, mw, mdv = load_macadam1974(base)
-    mac = (list(mx1), list(mx2), [mw] * len(mdv), list(mdv))
-    DATASETS = [
-        ("bfd", "BFD-P", "in", subset(lambda s: s.startswith("BFD-P"))),
-        ("leeds", "Leeds", "in", subset(lambda s: s == "LEEDS")),
-        ("witt", "Witt", "in", subset(lambda s: s == "WITT")),
-        ("rit", "RIT-DuPont", "in", subset(lambda s: s == "RIT-DuPont")),
-        ("macadam", "MacAdam 74", "held", mac),
-    ]
-    dkeys = [d[0] for d in DATASETS]
-    in_keys = [d[0] for d in DATASETS if d[2] == "in"]
-
-    # every entrant is (name, is_helm, de-function taking D65-adapted or raw pairs)
-    rows = {}
-    def add(name, is_helm):
-        rows[name] = {"is_helm": is_helm, "scores": {}, "ci": {}}
-    add("helmlab metricspace", True)
-    add("CIEDE2000", False)
-    add("CIE94", False)
-    for w in wrappers:
-        add(w.name, False)
-
-    for key, label, kind, (x1r, x2r, wh, dv) in DATASETS:
-        x1r = np.asarray(x1r, float); x2r = np.asarray(x2r, float)
-        wh = np.asarray(wh, float); dv = np.asarray(dv, float)
-        n = len(dv)
-        x1d = np.array([_cat_to_d65(x1r[i], wh[i]) for i in range(n)])
-        x2d = np.array([_cat_to_d65(x2r[i], wh[i]) for i in range(n)])
-        print(f"  scoring {label} (n={n}) ...", flush=True)
-
-        des = {"helmlab metricspace": np.asarray(metric.distance(x1d, x2d)).ravel(),
-               "CIEDE2000": np.array([_ciede2000(x1r[i:i+1], x2r[i:i+1], wh[i]) for i in range(n)]).ravel(),
-               "CIE94": np.array([_cie94_de(x1r[i:i+1], x2r[i:i+1], wh[i]) for i in range(n)]).ravel()}
-        for w in wrappers:
-            c1 = w.forward(x1d); c2 = w.forward(x2d)
-            des[w.name] = np.sqrt(((c1 - c2) ** 2).sum(-1))
-
-        for name, de in des.items():
-            de = np.asarray(de, float).ravel()
-            ok = np.isfinite(de)
-            if ok.sum() < 3:
-                rows[name]["scores"][key] = None; rows[name]["ci"][key] = None; continue
-            s = float(stress(de[ok], dv[ok]))
-            lo, hi = stress_ci(de[ok], dv[ok])
-            rows[name]["scores"][key] = round(s, 2)
-            rows[name]["ci"][key] = [round(float(lo), 1), round(float(hi), 1)]
-
-    for m in rows:
-        vals = [rows[m]["scores"][k] for k in dkeys if isinstance(rows[m]["scores"].get(k), (int, float))]
-        rows[m]["scores"]["mean"] = round(float(np.mean(vals)), 2) if vals else None
-
-    rank = _ranks(rows, dkeys + ["mean"])
-    for m, v in rows.items():
-        r_in = [rank[k][m] for k in in_keys if m in rank.get(k, {})]
-        r_held = rank["macadam"].get(m)
-        v["scores"]["overfit"] = (int(round(r_held - np.mean(r_in)))
-                                  if (r_held and r_in and v["is_helm"]) else None)
-        v["scores"]["gen_spread"] = _swing(rank, dkeys, m)
-        v["overall_rank"] = rank["mean"].get(m)
-    order = sorted(rows, key=lambda m: rows[m]["overall_rank"] or 999)
-
-    return {
-        "title": "Measurement — color-difference prediction",
-        "subtitle": ("STRESS (+ CI95 on hover) on 5 independent difference sources, each model with "
-                     "its own ΔE (metricspace = learned distance; CIEDE2000 / CIE94 = formulas; every "
-                     "colour-science space = Euclidean ΔE). Lower = closer to human."),
-        "holdout_note": ("The 4 COMBVD components (BFD-P, Leeds, Witt, RIT-DuPont) may be in-sample for "
-                         "the COMBVD-fit helmlab metricspace; MacAdam 1974 is the held-out check — where "
-                         "it does NOT win (CAM16-UCS does). Overfit Δrank (helmlab only) = held-out rank "
-                         "− mean in-sample rank. Rank swing = worst−best rank across all 5 sources."),
-        "groups": [
-            {"label": "COMBVD components · STRESS (possible in-sample)", "metrics": [
-                {"key": "bfd", "label": "BFD-P"}, {"key": "leeds", "label": "Leeds"},
-                {"key": "witt", "label": "Witt"}, {"key": "rit", "label": "RIT-DuPont"}]},
-            {"label": "Held-out", "metrics": [{"key": "macadam", "label": "MacAdam 74"}]},
-            {"label": "Composite", "metrics": [{"key": "mean", "label": "Mean STRESS"}]},
-            {"label": "Generalization", "metrics": [
-                {"key": "overfit", "label": "Overfit Δrank", "signed": True, "hint": "helmlab only"},
-                {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best over 5 sources"}]},
-        ],
-        "spaces": [{"name": m, "is_helm": rows[m]["is_helm"], "scores": rows[m]["scores"],
-                    "ci": rows[m]["ci"], "overall_rank": rows[m]["overall_rank"]}
-                   for m in order],
-        "winner": order[0] if order else None,
-    }
-
-
-# ═══════════════════════════ GENERATION board ═════════════════════════════
-# full validated human pool: 16 datasets across 5 categories (all forward-only)
-HUMAN = [
-    ("Hue · human data", [
+# ── property catalogue (per board) ──────────────────────────────────────────
+# generation = generation-relevant properties only
+GEN_SCORED = [
+    ("Hue-constancy · human", "hue", [
         ("hung_berns", "Hung-Berns"), ("ebner_fairchild", "Ebner-F."),
         ("munsell", "Munsell"), ("xiao_unique_hues", "Xiao")]),
-    ("Discrimination · human", [
+    ("Even spacing · human", "spacing", [("osa_ucs_1974", "OSA-UCS")]),
+]
+# measurement = difference / discrimination properties (forward-geometry)
+MEAS_GEOM = [
+    ("Discrimination · human", "discrimination", [
         ("macadam1942", "MacAdam42"), ("luo_rigg_ellipses", "Luo-Rigg"),
         ("alder1982", "Alder"), ("regan_1994_cvd_ellipses", "Regan"),
         ("hong_2025_ellipsoids", "Hong")]),
-    ("3-D discrimination · human", [
+    ("3-D discrimination · human", "3d_discrim", [
         ("koenderink_2026_3d_metric_field", "Koenderink"),
         ("brown_1957_12obs_ellipsoids", "Brown-57"),
         ("wyszecki_fielder_1971_ellipsoids", "Wyszecki-F"),
         ("brown_macadam_1949_ellipsoids", "Brown-MacAdam")]),
-    ("Tolerance · human", [
+    ("Tolerance · human", "tolerance", [
         ("berns_1991_rit_dupont_tolerance_vectors", "RIT-DuPont"),
         ("huang_2012_cielab_ellipses", "Huang")]),
-    ("Spacing · human", [("osa_ucs_1974", "OSA-UCS")]),
 ]
-_PROP_OF = {"Hue · human data": "hue", "Discrimination · human": "discrimination",
-            "3-D discrimination · human": "3d_discrim", "Tolerance · human": "tolerance",
-            "Spacing · human": "spacing"}
-
-# diagnostic human judges — real human data but lightly validated, so SHOWN (with
-# honest labels) but NOT scored. (naming/WCS is dropped: it's space-insensitive,
-# ~0.61 for every space, so it carries no signal.) Each group notes its ruler +
-# direction. lower=better unless the label says ↑.
-DIAG_HUMAN = [
-    ("H-K brightness · Spearman ρ, ↑ better · diagnostic", "hk_mechanism", [
+MEAS_DIAG = [
+    ("H-K brightness · ρ ↑ better · diagnostic", "hk_mechanism", [
         ("wyszecki_1967_osa_tiles", "Wyszecki-67"),
         ("zhang_2023_laser_display_brightness", "Zhang-23"),
         ("sanders_wyszecki_1964_HK", "Sanders-64")]),
-    ("H-K object lightness · STRESS · diagnostic", "hk_object", [
+    ("H-K object lightness · diagnostic", "hk_object", [
         ("fairchild_pirrotta_1991", "Fairchild-P")]),
     ("Chromatic adaptation · ΔE · diagnostic", "adaptation", [
         ("corresponding_colours", "Corr-colours")]),
-    ("Observer metamerism · spread · diagnostic", "observer_variance", [
+    ("Observer metamerism · diagnostic", "observer_variance", [
         ("asano_observers", "Asano")]),
 ]
 
@@ -274,89 +169,213 @@ def _build_genspace():
     return sp
 
 
-def generation_board():
+def compute_forward():
+    """human_pool (all properties) + robustness for the 20 colour spaces +
+    genspace. Returns {name: {"is_helm", "props": {prop:{ds:val}}, "rob": {...}}}."""
+    import torch
     spaces = [ColourWrapper(n) for n in COLOUR_SPACES]
     try:
         spaces.append(_build_genspace())
     except Exception as e:
         print(f"  genspace skipped: {e}")
-
-    import torch
-    rows = {}
+    out = {}
     for sp in spaces:
         try:
-            # validated_only=False also runs the diagnostic judges (H-K,
-            # adaptation, observer). Fall back to validated-only if a diagnostic
-            # judge crashes on some space, so the space still appears.
             try:
                 panel = hp.evaluate_space_on_pool(sp, validated_only=False)["by_property"]
             except Exception:
                 panel = hp.evaluate_space_on_pool(sp, validated_only=True)["by_property"]
         except Exception as e:
-            print(f"  gen skip {sp.name}: {type(e).__name__}: {e}"); continue
-        sc = {}
-        for gl, metrics in HUMAN:
-            prop = panel.get(_PROP_OF[gl], {})
-            for key, _ in metrics:
-                v = prop.get(key)
-                sc[key] = float(v) if isinstance(v, (int, float)) else None
-        for _, propname, metrics in DIAG_HUMAN:
-            prop = panel.get(propname, {})
-            for key, _ in metrics:
-                v = prop.get(key)
-                sc[key] = float(v) if isinstance(v, (int, float)) else None
-        # robustness gate (physics) — numpy for colour wrappers, torch adapters
-        # for genspace
+            print(f"  skip {sp.name}: {type(e).__name__}: {e}"); continue
         if isinstance(sp, ColourWrapper):
             rob = _robustness(sp.forward, sp.inverse)
         else:
             fwd = lambda x: sp.forward(torch.as_tensor(x, dtype=sp.dtype, device=sp.device)).detach().cpu().numpy()
             inv = lambda c: sp.inverse(torch.as_tensor(c, dtype=sp.dtype, device=sp.device)).detach().cpu().numpy()
             rob = _robustness(fwd, inv)
-        sc.update(rob)
-        rows[sp.name] = {"is_helm": sp.name.startswith("helmlab"), "scores": sc}
-        print(f"  {sp.name:16} hue_hb={sc.get('hung_berns')} koen={sc.get('koenderink_2026_3d_metric_field')} "
-              f"rit={sc.get('berns_1991_rit_dupont_tolerance_vectors')}", flush=True)
+        out[sp.name] = {"is_helm": sp.name.startswith("helmlab"), "props": panel, "rob": rob}
+        print(f"  {sp.name:16} hue_hb={panel.get('hue',{}).get('hung_berns')} "
+              f"disc={panel.get('discrimination',{}).get('macadam1942')} rt={rob['rt_srgb']}", flush=True)
+    return out
 
-    all_keys = [k for _, ms in HUMAN for k, _ in ms]
-    rank = _ranks(rows, all_keys)
-    for n, v in rows.items():
-        cats = []
-        for gl, metrics in HUMAN:
-            crs = [rank[k][n] for k, _ in metrics if n in rank.get(k, {})]
-            if crs:
-                cats.append(sum(crs) / len(crs))
-        v["overall_rank"] = round(sum(cats) / len(cats), 2) if cats else None
-        v["scores"]["gen_spread"] = _swing(rank, all_keys, n)
+
+def _val(props, prop, ds):
+    v = props.get(prop, {}).get(ds)
+    return float(v) if isinstance(v, (int, float)) else None
+
+
+# ═══════════════════════════ MEASUREMENT board ═════════════════════════════
+def measurement_board(fwd):
+    from core.metric_eval import (load_combvd_from_xlsx, load_macadam1974,
+                                  _ciede2000, _cie94_de, _cat_to_d65, stress,
+                                  _load_metric_space)
+    from core.bootstrap import stress_ci
+    base = data.baseline_dir()
+    if HELM_SRC not in sys.path:
+        sys.path.insert(0, HELM_SRC)
+    metric = _load_metric_space(HELMMETRIC, os.path.dirname(HELM_SRC))
+    wrappers = [ColourWrapper(n) for n in COLOUR_SPACES]
+
+    recs = load_combvd_from_xlsx(base)
+    def subset(pred):
+        r = [x for x in recs if pred(x["dataset"])]
+        return ([x["xyz1"] for x in r], [x["xyz2"] for x in r],
+                [x["white"] for x in r], [x["dv"] for x in r])
+    mx1, mx2, mw, mdv = load_macadam1974(base)
+    mac = (list(mx1), list(mx2), [mw] * len(mdv), list(mdv))
+    DATASETS = [("bfd", "BFD-P", "in", subset(lambda s: s.startswith("BFD-P"))),
+                ("leeds", "Leeds", "in", subset(lambda s: s == "LEEDS")),
+                ("witt", "Witt", "in", subset(lambda s: s == "WITT")),
+                ("rit", "RIT-DuPont", "in", subset(lambda s: s == "RIT-DuPont")),
+                ("macadam", "MacAdam 74", "held", mac)]
+    diff_keys = [d[0] for d in DATASETS]
+    in_keys = [d[0] for d in DATASETS if d[2] == "in"]
+
+    # rows: difference-only models (metricspace + formulas) + full forward spaces
+    rows = {}
+    rows["helmlab metricspace"] = {"is_helm": True, "scores": {}, "ci": {}, "diff_only": True}
+    rows["CIEDE2000"] = {"is_helm": False, "scores": {}, "ci": {}, "diff_only": True}
+    rows["CIE94"] = {"is_helm": False, "scores": {}, "ci": {}, "diff_only": True}
+    for w in wrappers:
+        rows[w.name] = {"is_helm": False, "scores": {}, "ci": {}, "diff_only": False}
+    # genspace shown too (a forward space, off its home turf)
+    if "helmlab genspace" in fwd:
+        rows["helmlab genspace"] = {"is_helm": True, "scores": {}, "ci": {}, "diff_only": False}
+
+    # ── difference STRESS ──
+    for key, label, kind, (x1r, x2r, wh, dv) in DATASETS:
+        x1r = np.asarray(x1r, float); x2r = np.asarray(x2r, float)
+        wh = np.asarray(wh, float); dv = np.asarray(dv, float); n = len(dv)
+        x1d = np.array([_cat_to_d65(x1r[i], wh[i]) for i in range(n)])
+        x2d = np.array([_cat_to_d65(x2r[i], wh[i]) for i in range(n)])
+        print(f"  difference {label} (n={n}) ...", flush=True)
+        des = {"helmlab metricspace": np.asarray(metric.distance(x1d, x2d)).ravel(),
+               "CIEDE2000": np.array([_ciede2000(x1r[i:i+1], x2r[i:i+1], wh[i]) for i in range(n)]).ravel(),
+               "CIE94": np.array([_cie94_de(x1r[i:i+1], x2r[i:i+1], wh[i]) for i in range(n)]).ravel()}
+        for w in wrappers:
+            des[w.name] = np.sqrt(((w.forward(x1d) - w.forward(x2d)) ** 2).sum(-1))
+        for name, de in des.items():
+            de = np.asarray(de, float).ravel(); ok = np.isfinite(de)
+            if ok.sum() < 3:
+                continue
+            rows[name]["scores"][key] = round(float(stress(de[ok], dv[ok])), 2)
+            lo, hi = stress_ci(de[ok], dv[ok])
+            rows[name]["ci"][key] = [round(float(lo), 1), round(float(hi), 1)]
+
+    # genspace difference via its own forward (torch) — compute Euclidean ΔE
+    if "helmlab genspace" in rows:
+        import torch
+        gsp = _build_genspace()
+        for key, label, kind, (x1r, x2r, wh, dv) in DATASETS:
+            x1r = np.asarray(x1r, float); x2r = np.asarray(x2r, float); wh = np.asarray(wh, float)
+            dv = np.asarray(dv, float); n = len(dv)
+            x1d = np.array([_cat_to_d65(x1r[i], wh[i]) for i in range(n)])
+            x2d = np.array([_cat_to_d65(x2r[i], wh[i]) for i in range(n)])
+            c1 = gsp.forward(torch.as_tensor(x1d, dtype=gsp.dtype, device=gsp.device)).detach().cpu().numpy()
+            c2 = gsp.forward(torch.as_tensor(x2d, dtype=gsp.dtype, device=gsp.device)).detach().cpu().numpy()
+            de = np.sqrt(((c1 - c2) ** 2).sum(-1)); ok = np.isfinite(de)
+            if ok.sum() >= 3:
+                rows["helmlab genspace"]["scores"][key] = round(float(stress(de[ok], dv[ok])), 2)
+                lo, hi = stress_ci(de[ok], dv[ok])
+                rows["helmlab genspace"]["ci"][key] = [round(float(lo), 1), round(float(hi), 1)]
+
+    # ── forward-geometry columns (discrimination / 3d / tolerance / diagnostic) ──
+    geom_keys = []
+    for _, prop, metrics in MEAS_GEOM + MEAS_DIAG:
+        for k, _ in metrics:
+            geom_keys.append(k)
+            for name, v in rows.items():
+                if v["diff_only"]:
+                    continue
+                props = fwd.get(name, {}).get("props", {})
+                rows[name]["scores"][k] = _val(props, prop, k)
+
+    # ── ranks + overall ──
+    all_score_keys = diff_keys + geom_keys
+    rank = _ranks(rows, all_score_keys)
+    for name, v in rows.items():
+        v["scores"]["mean_diff"] = round(float(np.mean([rows[name]["scores"][k]
+                                    for k in diff_keys if isinstance(rows[name]["scores"].get(k), (int, float))])), 2) \
+            if any(isinstance(rows[name]["scores"].get(k), (int, float)) for k in diff_keys) else None
+        # rank on DIFFERENCE prediction — the one task every entrant shares (a
+        # difference-only formula must not win just because it's judged on its
+        # single strength while full spaces are judged on everything).
+        # Discrimination / 3-D / tolerance are shown as additional measurement
+        # columns (real, tinted) but don't drive the shared overall.
+        v["overall_rank"] = _overall(rank, diff_keys, name)
+        if v["is_helm"] and name == "helmlab metricspace":
+            r_in = [rank[k][name] for k in in_keys if name in rank.get(k, {})]
+            r_h = rank["macadam"].get(name)
+            v["scores"]["overfit"] = int(round(r_h - np.mean(r_in))) if (r_h and r_in) else None
+        else:
+            v["scores"]["overfit"] = None
+        v["scores"]["gen_spread"] = _swing(rank, all_score_keys, name)
     order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 999)
 
-    # Groups ordered by HUMAN relevance: the scored human categories first, then
-    # the diagnostic HUMAN judges (appearance → adaptation → inter-observer), so
-    # every human measurement sits together; the non-human columns (the derived
-    # rank-swing statistic and the physics robustness gate) go last.
-    groups = [{"label": gl, "scored": True,
-               "metrics": [{"key": k, "label": lb} for k, lb in ms]} for gl, ms in HUMAN]
-    # diagnostic human judges (real data, lightly validated) — shown, not scored
-    for gl, propname, metrics in DIAG_HUMAN:
+    groups = [
+        {"label": "Difference · STRESS (COMBVD components; possible in-sample)", "metrics": [
+            {"key": "bfd", "label": "BFD-P"}, {"key": "leeds", "label": "Leeds"},
+            {"key": "witt", "label": "Witt"}, {"key": "rit", "label": "RIT-DuPont"}]},
+        {"label": "Difference · held-out", "metrics": [{"key": "macadam", "label": "MacAdam 74"}]},
+    ]
+    for gl, prop, metrics in MEAS_GEOM:
+        groups.append({"label": gl, "metrics": [{"key": k, "label": lb} for k, lb in metrics]})
+    for gl, prop, metrics in MEAS_DIAG:
         groups.append({"label": gl, "scored": False,
                        "metrics": [{"key": k, "label": lb} for k, lb in metrics]})
-    # ── non-human tail ──
-    groups.append({"label": "Generalization", "scored": True, "metrics": [
-        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 16 datasets"}]})
-    # physics-only robustness gate — NOT scored (no ruler, so no family bias);
-    # flags spaces that lose invertibility or go non-finite at wide gamut
-    groups.append({"label": "Robustness · physics (gate, not scored)", "scored": False, "metrics": [
-        {"key": "rt_srgb", "label": "RT sRGB", "hint": "round-trip max error (invertibility)"},
-        {"key": "rt_rec2020", "label": "RT Rec2020", "hint": "round-trip max error at wide gamut"},
-        {"key": "nan_rec2020", "label": "Rec2020 NaN%", "hint": "% of wide-gamut points that go non-finite"}]})
+    groups.append({"label": "Generalization", "metrics": [
+        {"key": "overfit", "label": "Overfit Δrank", "signed": True, "hint": "helmlab only"},
+        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank"}]})
     return {
-        "title": "Generation — match to human vision",
-        "subtitle": ("RANKED on the full validated human pool — 16 datasets in 5 categories (hue, "
-                     "discrimination, 3-D discrimination, tolerance, spacing), each category equal "
-                     "weight. Everything else is SHOWN but not scored, honestly labeled: diagnostic "
-                     "human judges (H-K brightness/lightness, chromatic adaptation, observer "
-                     "metamerism) and a physics robustness gate. Lower = better except columns marked "
-                     "↑. No CIELab-referenced engineering metric is scored (that ruler flatters CIELAB)."),
+        "title": "Measurement — perceptual accuracy (color difference)",
+        "subtitle": ("How accurately a space represents human color DIFFERENCE. Difference prediction "
+                     "= STRESS (+CI95 on hover), each model with its own ΔE; the geometry columns "
+                     "(discrimination / 3-D / tolerance) are JND-ellipse roundness — difference "
+                     "formulas show — there (they aren't spaces). Lower = better except ↑ columns; "
+                     "grey = shown not scored. Overall = mean of the difference + discrimination + "
+                     "3-D + tolerance category ranks."),
+        "holdout_note": ("metricspace is fit to COMBVD, so its BFD-P/Leeds/Witt/RIT scores may be "
+                         "in-sample; on the held-out MacAdam 1974 it does NOT win (CAM16-UCS does). "
+                         "Overfit Δrank (metricspace only) = held-out rank − mean in-sample rank."),
+        "groups": groups,
+        "spaces": [{"name": n, "is_helm": rows[n]["is_helm"], "scores": rows[n]["scores"],
+                    "ci": rows[n]["ci"], "overall_rank": rows[n]["overall_rank"]} for n in order],
+        "winner": order[0] if order else None,
+    }
+
+
+# ═══════════════════════════ GENERATION board ═════════════════════════════
+def generation_board(fwd):
+    rows = {}
+    for name, rec in fwd.items():
+        sc = {}
+        for _, prop, metrics in GEN_SCORED:
+            for k, _ in metrics:
+                sc[k] = _val(rec["props"], prop, k)
+        sc.update(rec["rob"])
+        rows[name] = {"is_helm": rec["is_helm"], "scores": sc}
+
+    scored_keys = [k for _, _, ms in GEN_SCORED for k, _ in ms]
+    rank = _ranks(rows, scored_keys)
+    for name, v in rows.items():
+        v["overall_rank"] = _overall(rank, scored_keys, name)
+        v["scores"]["gen_spread"] = _swing(rank, scored_keys, name)
+    order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 999)
+
+    groups = [{"label": gl, "metrics": [{"key": k, "label": lb} for k, lb in ms]}
+              for gl, _, ms in GEN_SCORED]
+    groups.append({"label": "Generalization", "metrics": [
+        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best over hue+spacing"}]})
+    groups.append({"label": "Robustness · physics (gate, not scored)", "scored": False, "metrics": [
+        {"key": "rt_srgb", "label": "RT sRGB", "hint": "round-trip max error"},
+        {"key": "rt_rec2020", "label": "RT Rec2020", "hint": "round-trip at wide gamut"},
+        {"key": "nan_rec2020", "label": "Rec2020 NaN%", "hint": "% non-finite at wide gamut"}]})
+    return {
+        "title": "Generation — color-synthesis quality",
+        "subtitle": ("Only generation-relevant properties: hue-constancy (gradients & shades keep "
+                     "their hue) and even spacing (no banding), plus a physics robustness gate. "
+                     "Difference / discrimination metrics live on the Measurement board — they judge "
+                     "color-matching, not generation. Lower = better."),
         "groups": groups,
         "spaces": [{"name": n, "is_helm": rows[n]["is_helm"], "scores": rows[n]["scores"],
                     "overall_rank": rows[n]["overall_rank"]} for n in order],
@@ -365,16 +384,17 @@ def generation_board():
 
 
 def main():
-    print("── Measurement board ─────────────────────────────")
-    meas = measurement_board()
-    print(f"  winner: {meas['winner']} | {len(meas['spaces'])} models")
+    print("── forward pool (human_pool + robustness) ────────")
+    fwd = compute_forward()
+    print("\n── Measurement board ─────────────────────────────")
+    meas = measurement_board(fwd)
+    print(f"  winner: {meas['winner']} | {len(meas['spaces'])} entrants")
     print("\n── Generation board ──────────────────────────────")
-    gen = generation_board()
+    gen = generation_board(fwd)
     print(f"  winner: {gen['winner']} | {len(gen['spaces'])} spaces")
 
-    out = {"generated": "2026-07-09", "boards": {"measurement": meas, "generation": gen}}
+    out = {"generated": "2026-07-10", "boards": {"measurement": meas, "generation": gen}}
     dest = os.path.join(_ROOT, "docs", "leaderboard.json")
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
     json.dump(out, open(dest, "w"), indent=2)
     with open(os.path.join(os.path.dirname(dest), "leaderboard-data.js"), "w") as f:
         f.write("window.LEADERBOARD = " + json.dumps(out) + ";\n")

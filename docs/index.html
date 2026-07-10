@@ -13,13 +13,13 @@
   <p class="sub">Color spaces ranked on real psychophysical datasets — from
     <a href="https://github.com/colour-science/colour">colour-science</a> and
     <b>helmlab</b>. Lower score = closer to human vision.</p>
-  <p class="note"><b>Two boards, on purpose.</b> A space that <i>measures</i>
-    color difference and a space that <i>generates</i> color are judged on
-    different things. Mixing them into one ranking is a category error — so we
-    don't. helmlab isn't one entry either: it competes as
-    <b>metricspace</b> (a learned difference model) on the measurement board and
-    <b>genspace</b> (a synthesis space) on the generation board.
-    <span class="ak">Ak koyun kara koyun.</span></p>
+  <p class="note"><b>Two boards, and each carries only its own metrics.</b>
+    <b>Measurement</b> = difference / discrimination (how accurately the space
+    represents human color difference) — metricspace's home. <b>Generation</b> =
+    hue-constancy + even spacing + robustness (what actually decides whether
+    gradients and palettes look right) — genspace's home. A space that's great at
+    measuring difference (e.g. DIN99) can be poor at generation, and vice-versa,
+    so we never mix the two. <span class="ak">Ak koyun kara koyun.</span></p>
 </header>
 
 <nav id="tabs">
@@ -44,34 +44,29 @@
      · human data from
      <a href="https://github.com/Grkmyldz148/color-perception-datasets">color-perception-datasets</a>
      · <span id="gen"></span></p>
-  <p class="method"><b>Measurement</b> (23 models) = STRESS on 5 independent
-     difference sources — COMBVD unpacked into its components (BFD-P, Leeds, Witt,
-     RIT-DuPont) plus held-out MacAdam 1974 — each model scoring with its own ΔE
-     (metricspace = learned distance; CIEDE2000 / CIE94 = formulas; every
-     colour-science space = Euclidean ΔE); hover a cell for its 95% CI.
-     <b>Overfit Δrank</b> (helmlab only, since it's the one fitted model) =
-     held-out rank minus mean in-sample rank. <b>Generation</b> (21 spaces) is
-     ranked on the <b>full validated human pool</b> — 16 datasets across 5
-     categories: hue (Hung-Berns, Ebner-Fairchild, Munsell, Xiao), discrimination
-     (MacAdam 1942, Luo-Rigg, Alder, Regan, Hong), 3-D discrimination
-     (Koenderink, Brown 1957, Wyszecki-Fielder, Brown-MacAdam), tolerance
-     (RIT-DuPont, Huang) and spacing (OSA-UCS) — each category weighing equally.
-     No CIELab-referenced engineering metric (gamut-mapping / gradient) is scored:
-     that ruler structurally flatters CIELAB, so it is left off. The greyed
-     <b>Robustness</b> columns are a physics-only gate (not scored): round-trip
-     invertibility and whether a space stays finite across the Rec2020 gamut —
-     measured against the identity and "is this a finite number", so no rival
-     space can bias it (it flags e.g. Yrg's 1e-4 round-trip). The other greyed
-     groups are <b>diagnostic human judges</b> (real data, lightly validated —
-     shown, not scored): Helmholtz-Kohlrausch brightness (Wyszecki 1967 / Zhang
-     2023 / Sanders 1964 — ρ, ↑ better) and object lightness (Fairchild-Pirrotta),
-     chromatic adaptation (corresponding colours — where CIELAB, having no CAT,
-     scores ~137 ΔE vs OKLab's ~0.3) and observer metamerism (Asano). Color naming
-     (WCS) is omitted — it is space-insensitive (~0.61 for every space).
-     <b>Rank swing</b> = worst minus best rank across the 16 scored datasets — low
-     = robust generalist, high = narrow specialist (the empirical fingerprint of
-     overfitting). Colour-science spaces use their canonical reference
-     implementations.</p>
+  <p class="method"><b>Measurement</b> ranks on <b>difference prediction</b> —
+     STRESS (hover for CI95) on 5 independent sources (COMBVD's BFD-P / Leeds /
+     Witt / RIT-DuPont components + held-out MacAdam 1974), each entrant with its
+     own ΔE (metricspace = learned distance; CIEDE2000 / CIE94 = formulas; every
+     colour space = Euclidean ΔE), one equal vote per source so no single dataset
+     dominates. The <b>discrimination / 3-D / tolerance</b> columns are additional
+     measurement metrics (JND-ellipse roundness) shown for the spaces — difference
+     formulas show — there, as they aren't spaces. <b>Overfit Δrank</b>
+     (metricspace only) = held-out rank − mean in-sample rank; on the held-out
+     MacAdam it does not win. <b>Generation</b> ranks on the properties that
+     actually decide synthesis quality: <b>hue-constancy</b> (Hung-Berns,
+     Ebner-Fairchild, Munsell, Xiao — gradients keep their hue) and <b>even
+     spacing</b> (OSA-UCS — no banding), one vote per dataset. Difference /
+     discrimination metrics are NOT here — they judge color-matching, not
+     generation (a DIN99, great at difference, makes ugly hue-shifting gradients).
+     Greyed columns are shown, not scored: appearance <b>diagnostics</b>
+     (Helmholtz-Kohlrausch brightness ρ ↑better / object lightness, chromatic
+     adaptation — where CIELAB with no CAT scores ~137 ΔE vs OKLab ~0.3, observer
+     metamerism) and a physics <b>robustness</b> gate (round-trip + wide-gamut
+     finiteness, measured against the identity so no rival space biases it — it
+     flags e.g. Yrg's 1e-4 round-trip). Color naming (WCS) is omitted — it's
+     space-insensitive (~0.61 everywhere). Colour-science spaces use their
+     canonical reference implementations.</p>
 </footer>
 
 <script src="leaderboard-data.js"></script>

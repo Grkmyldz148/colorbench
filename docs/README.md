@@ -18,47 +18,48 @@ them into one ranking is a category error (the project's core principle:
 Repo **Settings → Pages → Source: Deploy from a branch → `main` / `/docs`**.
 The site publishes at `https://grkmyldz148.github.io/colorbench/`.
 
-## Board 1 — Measurement (color-difference prediction)
+Each board carries **only the metrics that belong to its axis** — a difference
+property never appears on the generation board and vice-versa.
 
-"Which model best predicts human color difference?" Every entrant scores a
-**STRESS** on the real difference datasets using **its own ΔE** — helmlab
-metricspace (learned distance), the CIEDE2000 / CIE94 formulas, and every
-invertible colour-science space via its Euclidean ΔE (**23 models total**).
+## Board 1 — Measurement (perceptual accuracy: color difference)
 
-Columns: **BFD-P · Leeds · Witt · RIT-DuPont** (the four COMBVD components,
-possibly in-sample for the COMBVD-fit metricspace) · **MacAdam 74** (held-out) ·
-**Mean STRESS** · **Overfit Δrank** (helmlab only — the sole fitted model =
-held-out rank − mean in-sample rank) · **Rank swing** (worst − best rank over the
-5 sources). Hover any cell for its bootstrap **CI95**.
+"How accurately does the space represent human color **difference**?" Ranked on
+**difference prediction** — STRESS on 5 independent sources (COMBVD's **BFD-P ·
+Leeds · Witt · RIT-DuPont** components + held-out **MacAdam 74**), each entrant
+with its own ΔE (metricspace = learned distance; CIEDE2000 / CIE94 = formulas;
+every colour-science space = Euclidean ΔE), **one equal vote per source**. Hover
+for **CI95**.
 
-The breakdown is honest: metricspace wins the mean but is carried by BFD-P (its
-training bulk); on the **held-out MacAdam 1974 it does not win** — CAM16-UCS does.
+Additional measurement columns (shown for the spaces; formulas show — as they
+aren't spaces): **discrimination** (MacAdam 42, Luo-Rigg, Alder, Regan, Hong),
+**3-D discrimination** (Koenderink, Brown 57, Wyszecki-Fielder, Brown-MacAdam),
+**tolerance** (RIT-DuPont, Huang) — all JND-ellipse roundness. Plus greyed
+appearance **diagnostics** (H-K brightness/lightness, chromatic adaptation,
+observer metamerism). **Overfit Δrank** (metricspace only) = held-out rank −
+mean in-sample rank; on held-out MacAdam it does **not** win — CAM16-UCS does.
+This is where DIN99 and the CAM-UCS family shine (they're difference-uniformity
+spaces).
 
-## Board 2 — Generation (match to human vision)
+## Board 2 — Generation (color-synthesis quality)
 
-"Which space best matches human vision to generate color in?" Every invertible
-colour-science space + helmlab **genspace** (**21 spaces**), ranked on the
-**full validated human pool — 16 datasets in 5 categories**, each category
-weighing equally:
+"How well does the space **generate** color?" Every invertible colour-science
+space + helmlab **genspace** (**21 spaces**), ranked only on what decides
+synthesis quality, one vote per dataset:
 
-| Category | Datasets |
-|---|---|
-| Hue | Hung-Berns · Ebner-Fairchild · Munsell · Xiao |
-| Discrimination | MacAdam 1942 · Luo-Rigg · Alder · Regan · Hong |
-| 3-D discrimination | Koenderink · Brown 1957 · Wyszecki-Fielder · Brown-MacAdam |
-| Tolerance | RIT-DuPont · Huang |
-| Spacing | OSA-UCS |
+| Property | Datasets | Why it's generation |
+|---|---|---|
+| Hue-constancy | Hung-Berns · Ebner-Fairchild · Munsell · Xiao | gradients & shades must keep their hue |
+| Even spacing | OSA-UCS | equal perceptual steps → no banding |
 
-No CIELab-referenced engineering metric (gamut-mapping / gradient) is scored:
-`core/metrics/gamut_mapping.py` measures in CIELab (`ciede2000` + CIELab hue), a
-CIELab-referenced ruler that structurally flatters CIELAB and its transforms —
-the *measure-CIELab-with-CIELab* circularity the fairness verdict zeroes out.
-(Letting it in put CIELAB *above* OKLab and genspace, which was the tell.) A physics-only **Robustness gate** (round-trip invertibility + wide-gamut finiteness) is shown as an unscored diagnostic — it compares each space only to the identity and to "is this finite", so no rival space can bias it (it flags e.g. Yrg's 1e-4 round-trip). The
-CAM-UCS family leads — those are appearance models fit to exactly this kind of
-data; **helmlab genspace sits mid-pack** (a hue-focused generation space, not a
-full uniformity model). **Rank swing** = worst − best rank over the 16 datasets;
-low = robust generalist, high = narrow specialist (the empirical fingerprint of
-overfitting).
+Discrimination / tolerance are **difference** properties — they live on the
+Measurement board, not here (a space like DIN99 is great at difference but makes
+ugly hue-shifting gradients, so it ranks high on Measurement and low here). A
+physics-only **Robustness gate** (round-trip + wide-gamut finiteness) is a greyed
+diagnostic — measured against the identity, so no rival space biases it (flags
+e.g. Yrg's 1e-4 round-trip). **Rank swing** = worst − best rank; low = robust
+generalist, high = narrow specialist. helmlab **genspace** lands top-quarter here
+(elite hue-constancy, held back by mediocre spacing) — its home turf, unlike the
+Measurement board.
 
 ## Scope
 
