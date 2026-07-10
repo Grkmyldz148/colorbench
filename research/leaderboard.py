@@ -11,8 +11,9 @@ TWO boards, and each one carries ONLY the metrics that belong to its axis:
         · discrimination (JND-ellipse roundness), 3-D discrimination, tolerance
         · appearance diagnostics: H-K brightness/lightness, chromatic
           adaptation, observer metamerism
-      This is metricspace's home. Difference formulas show "-" on the
-      forward-geometry columns (they aren't spaces).
+      This is metricspace's home. A pure distance model (metricspace / CIEDE2000
+      / CIE94) is scored on the discrimination / 3-D / tolerance ellipses with
+      ITS OWN distance, so it competes on those columns too - not blank.
 
   GENERATION - "how well does the space GENERATE color (gradients, palettes)?"
       Only the properties that decide generation quality:
@@ -279,30 +280,70 @@ def measurement_board(fwd):
                 lo, hi = stress_ci(de[ok], dv[ok])
                 rows["helmlab genspace"]["ci"][key] = [round(float(lo), 1), round(float(hi), 1)]
 
-    # ── forward-geometry columns (discrimination / 3d / tolerance / diagnostic) ──
+    # ── forward-geometry columns: discrimination / 3d / tolerance (all entrants)
+    # + appearance diagnostics (forward spaces only) ──
+    # forward spaces read from the human_pool; the distance-only models
+    # (metricspace / CIEDE2000 / CIE94) are scored on the SAME JND ellipses with
+    # THEIR OWN distance (via the judges' `metric=` hook), so they're no longer
+    # blank there - every entrant competes on discrimination with its own ΔE.
+    from core.human_pool import (judge_jnd_ellipse, judge_regan_normal_ellipse, judge_hong_2dw,
+                                 judge_jnd_ellipsoid_koenderink, judge_brown_1957,
+                                 judge_jnd_ellipsoid_g, judge_lab_ellipsoid, judge_tolerance_vectors)
+    from core.metric_eval import _ciede2000, _cie94_de
+    _D65X = np.array([0.95047, 1.0, 1.08883])
+
+    def _metric_geom(mfn):
+        g = lambda fn, *a: (fn(None, *a, metric=mfn) or {}).get("mean_cv")
+        return {
+            "macadam1942": g(judge_jnd_ellipse, "macadam1942"),
+            "luo_rigg_ellipses": g(judge_jnd_ellipse, "luo_rigg_ellipses"),
+            "alder1982": g(judge_jnd_ellipse, "alder1982"),
+            "regan_1994_cvd_ellipses": g(judge_regan_normal_ellipse),
+            "hong_2025_ellipsoids": g(judge_hong_2dw),
+            "koenderink_2026_3d_metric_field": g(judge_jnd_ellipsoid_koenderink),
+            "brown_1957_12obs_ellipsoids": g(judge_brown_1957),
+            "wyszecki_fielder_1971_ellipsoids": g(judge_jnd_ellipsoid_g, "wyszecki_fielder_1971_ellipsoids"),
+            "brown_macadam_1949_ellipsoids": g(judge_jnd_ellipsoid_g, "brown_macadam_1949_ellipsoids"),
+            "berns_1991_rit_dupont_tolerance_vectors": g(judge_tolerance_vectors),
+            "huang_2012_cielab_ellipses": g(judge_lab_ellipsoid),
+        }
+    def _loop_de(fn):
+        return lambda a, b: np.array([fn(np.asarray(a, float)[i:i+1], np.asarray(b, float)[i:i+1], _D65X)
+                                      for i in range(len(a))]).ravel()
+    DIST_METRICS = {
+        "helmlab metricspace": lambda a, b: np.asarray(metric.distance(np.asarray(a, float), np.asarray(b, float))).ravel(),
+        "CIEDE2000": _loop_de(_ciede2000), "CIE94": _loop_de(_cie94_de),
+    }
     geom_keys = []
-    for _, prop, metrics in MEAS_GEOM + MEAS_DIAG:
+    diag_keys = []
+    for _, prop, metrics in MEAS_GEOM:
         for k, _ in metrics:
             geom_keys.append(k)
             for name, v in rows.items():
-                if v["diff_only"]:
-                    continue
-                props = fwd.get(name, {}).get("props", {})
-                rows[name]["scores"][k] = _val(props, prop, k)
+                if not v["diff_only"]:
+                    rows[name]["scores"][k] = _val(fwd.get(name, {}).get("props", {}), prop, k)
+    for _, prop, metrics in MEAS_DIAG:
+        for k, _ in metrics:
+            diag_keys.append(k)
+            for name, v in rows.items():
+                if not v["diff_only"]:
+                    rows[name]["scores"][k] = _val(fwd.get(name, {}).get("props", {}), prop, k)
+    for mname, mfn in DIST_METRICS.items():
+        if mname not in rows:
+            continue
+        print(f"  {mname} discrimination via own distance ...", flush=True)
+        for k, cv in _metric_geom(mfn).items():
+            rows[mname]["scores"][k] = float(cv) if isinstance(cv, (int, float)) else None
 
     # ── ranks + overall ──
-    all_score_keys = diff_keys + geom_keys
+    # Now every entrant (spaces AND distance models) has difference + discrimination
+    # + 3-D + tolerance, so rank on all four (dataset-equal). Appearance diagnostics
+    # stay out of the overall (distance models can't produce them).
+    meas_scored_keys = diff_keys + geom_keys
+    all_score_keys = meas_scored_keys + diag_keys
     rank = _ranks(rows, all_score_keys)
     for name, v in rows.items():
-        v["scores"]["mean_diff"] = round(float(np.mean([rows[name]["scores"][k]
-                                    for k in diff_keys if isinstance(rows[name]["scores"].get(k), (int, float))])), 2) \
-            if any(isinstance(rows[name]["scores"].get(k), (int, float)) for k in diff_keys) else None
-        # rank on DIFFERENCE prediction - the one task every entrant shares (a
-        # difference-only formula must not win just because it's judged on its
-        # single strength while full spaces are judged on everything).
-        # Discrimination / 3-D / tolerance are shown as additional measurement
-        # columns (real, tinted) but don't drive the shared overall.
-        v["overall_rank"] = _overall(rank, diff_keys, name)
+        v["overall_rank"] = _overall(rank, meas_scored_keys, name)
         if v["is_helm"] and name == "helmlab metricspace":
             r_in = [rank[k][name] for k in in_keys if name in rank.get(k, {})]
             r_h = rank["macadam"].get(name)
@@ -328,12 +369,13 @@ def measurement_board(fwd):
         {"key": "gen_spread", "label": "Rank swing", "hint": "worst-best rank"}]})
     return {
         "title": "Measurement - perceptual accuracy (color difference)",
-        "subtitle": ("How accurately a space represents human color DIFFERENCE. Difference prediction "
-                     "= STRESS (+CI95 on hover), each model with its own ΔE; the geometry columns "
-                     "(discrimination / 3-D / tolerance) are JND-ellipse roundness - difference "
-                     "formulas are blank there (they aren't spaces). Lower = better except up-arrow "
-                     "grey = shown not scored. Overall = mean of the difference + discrimination + "
-                     "3-D + tolerance category ranks."),
+        "subtitle": ("How accurately a model represents human color DIFFERENCE. Every entrant scores "
+                     "with its OWN ΔE on all of it: difference prediction = STRESS (+CI95 on hover); "
+                     "discrimination / 3-D / tolerance = JND-ellipse roundness (a pure distance model "
+                     "like metricspace or CIEDE2000 is scored with its own distance on the same "
+                     "ellipses, not blank). Overall = one equal vote per difference + discrimination "
+                     "+ 3-D + tolerance dataset. Lower = better; grey appearance diagnostics are shown "
+                     "not scored (they need forward coordinates, which distance models lack)."),
         "holdout_note": ("metricspace is fit to COMBVD, so its BFD-P/Leeds/Witt/RIT scores may be "
                          "in-sample; on the held-out MacAdam 1974 it does NOT win (CAM16-UCS does). "
                          "Overfit Δrank (metricspace only) = held-out rank - mean in-sample rank."),

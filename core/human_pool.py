@@ -1,4 +1,4 @@
-"""Human-data judging pool — grounds ColorBench's ruler in the full curated
+"""Human-data judging pool - grounds ColorBench's ruler in the full curated
 color-perception-datasets pool (43 schema-validated psychophysical datasets),
 not just the ~8 currently wired in.
 
@@ -6,7 +6,7 @@ Motivation (Görkem, 2026-06-08): "if we measure WITH CIELab we cap at CIELab.
 Judge each property with the best HUMAN data for it." The pool has real JND
 ellipses (MacAdam 1942, Luo-Rigg, Hong 2025, Koenderink 2026), unique hues
 (Xiao), H-K brightness (Sanders-Wyszecki, Zhang 2023), corresponding colors
-(Breneman) — the best-of-breed per-property human judges. This module loads them
+(Breneman) - the best-of-breed per-property human judges. This module loads them
 schema-by-schema and exposes a judge per schema, all routed to a property tier.
 
 Pool layout (per dataset): canonical.csv (normalized, CIELAB) + meta.yaml
@@ -27,11 +27,11 @@ import numpy as np
 # ── pool location ─────────────────────────────────────────────────────────────
 # Resolution order: COLOR_PERCEPTION_POOL env var, then the sibling checkout
 # ../../color-perception-datasets/datasets relative to this repo. No absolute
-# machine-specific fallback — pool_available()/pool_hint() give a clear message
+# machine-specific fallback - pool_available()/pool_hint() give a clear message
 # instead of a silent empty panel.
 def _resolve_pool():
     # central resolver (env / sibling / cache with on-demand fetch), but never
-    # crash at import time — fall back to the sibling guess if resolution fails.
+    # crash at import time - fall back to the sibling guess if resolution fails.
     try:
         from .data import pool_dir
         return pool_dir(auto_fetch=False)
@@ -146,7 +146,7 @@ def _space_forward(space, xyz):
     space (.forward) or a numpy-forward wrapper."""
     xyz = np.atleast_2d(np.asarray(xyz, dtype=np.float64))
     fwd = space.forward
-    # Try torch input first — works for every ColorBench ColorSpace (incl. the
+    # Try torch input first - works for every ColorBench ColorSpace (incl. the
     # colour-science canonical wrappers, which call .detach() on their input).
     try:
         import torch
@@ -162,8 +162,26 @@ def _space_forward(space, xyz):
     return np.asarray(fwd(xyz), dtype=np.float64)
 
 
+def _center_dists(space, xyz, metric=None):
+    """Distances from the center xyz[0] to the perimeter xyz[1:].
+
+    Default (metric=None): Euclidean distance in the SPACE's forward coords -
+    the discrimination/tolerance judges' original behaviour, unchanged.
+
+    metric given: a distance MODEL (e.g. a learned metric or a ΔE formula) that
+    takes two (N,3) XYZ arrays and returns N distances - lets a pure distance
+    model (no forward coordinates) still be scored on JND-ellipse roundness with
+    ITS OWN distance instead of a Euclidean forward it doesn't have."""
+    xyz = np.atleast_2d(np.asarray(xyz, dtype=np.float64))
+    if metric is not None:
+        c = np.repeat(xyz[0:1], len(xyz) - 1, axis=0)
+        return np.asarray(metric(c, xyz[1:]), dtype=np.float64).ravel()
+    lab = _space_forward(space, xyz)
+    return np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+
+
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 1 — pair_diff → STRESS (human dv vs space euclidean ΔE)
+#  JUDGE 1 - pair_diff → STRESS (human dv vs space euclidean ΔE)
 # ════════════════════════════════════════════════════════════════════════════
 def _stress(de_pred, dv):
     de = np.asarray(de_pred, float); dv = np.asarray(dv, float)
@@ -196,7 +214,7 @@ def judge_pair_diff(space, name, adapt_d65=True):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 2 — constant_hue → mean angular hue deviation (per hue locus)
+#  JUDGE 2 - constant_hue → mean angular hue deviation (per hue locus)
 # ════════════════════════════════════════════════════════════════════════════
 def _circ_mad_deg(hue_deg):
     rad = np.asarray(hue_deg) * math.pi / 180.0
@@ -245,7 +263,7 @@ def judge_constant_hue(space, name, hue_key=None, adapt_d65=True, c_floor=3.0):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 4 — 3D JND ellipsoid (Koenderink 2026: RGB center + Σ covariance)
+#  JUDGE 4 - 3D JND ellipsoid (Koenderink 2026: RGB center + Σ covariance)
 # ════════════════════════════════════════════════════════════════════════════
 def _srgb_to_xyz(rgb):
     rgb = np.clip(np.asarray(rgb, float), 0, 1)
@@ -257,7 +275,7 @@ def _srgb_to_xyz(rgb):
 
 
 def judge_jnd_ellipsoid_koenderink(space, name="koenderink_2026_3d_metric_field",
-                                   n_dir=26):
+                                   n_dir=26, metric=None):
     """Koenderink 2026 3D JND metric field: per center, Σ is the discrimination
     covariance in display RGB → points on the unit-Mahalanobis ellipsoid
     (chol(Σ)·u) are equally just-noticeable. A uniform space maps them to equal
@@ -288,8 +306,7 @@ def judge_jnd_ellipsoid_koenderink(space, name="koenderink_2026_3d_metric_field"
         peri = c + (u @ Lc.T)               # ellipsoid surface in RGB
         rgb = np.vstack([c, peri])
         xyz = _srgb_to_xyz(np.clip(rgb, 0, 1))
-        lab = _space_forward(space, xyz)
-        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        d = _center_dists(space, xyz, metric)
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
@@ -297,9 +314,9 @@ def judge_jnd_ellipsoid_koenderink(space, name="koenderink_2026_3d_metric_field"
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 3 — jnd_ellipses (2D) → discrimination isotropy (real human thresholds)
+#  JUDGE 3 - jnd_ellipses (2D) → discrimination isotropy (real human thresholds)
 # ════════════════════════════════════════════════════════════════════════════
-def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True):
+def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True, metric=None):
     """Real human JND ellipses (MacAdam 1942 etc.): every point on a center's
     ellipse is equally just-noticeable, so a perceptually-uniform space should
     map them all to EQUAL distance from the center. The coefficient of variation
@@ -328,12 +345,11 @@ def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True):
         xyz = xyY_to_xyz(xy[:, 0], xy[:, 1], np.full(len(xy), Y))
         if adapt_d65:
             # mixed-illuminant sets (alder1982: 42 D65 + 39 A rows) carry a
-            # per-row illuminant column — adapt each row under ITS OWN white
+            # per-row illuminant column - adapt each row under ITS OWN white
             row_illum = (r.get("illuminant") or "").strip()
             white = _white_for(row_illum) if row_illum else default_white
             xyz = cat_to_d65(xyz, white)
-        lab = _space_forward(space, xyz)
-        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        d = _center_dists(space, xyz, metric)
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
@@ -341,7 +357,7 @@ def judge_jnd_ellipse(space, name, n_phi=24, Y=0.2, adapt_d65=True):
 
 
 def judge_regan_normal_ellipse(space, name="regan_1994_cvd_ellipses",
-                               n_phi=24, Y=0.2):
+                               n_phi=24, Y=0.2, metric=None):
     """Regan et al. 1994 (Cambridge Colour Test) discrimination ellipses, NORMAL
     observers only (classification == 'N': 5 observers × 3 centers). The ellipses
     are given in the CIE 1976 u'v' plane (semi-major = long_axis_uv, semi-minor =
@@ -373,8 +389,7 @@ def judge_regan_normal_ellipse(space, name="regan_1994_cvd_ellipses",
         x = 9.0 * u / denom
         y = 4.0 * v / denom
         xyz = xyY_to_xyz(x, y, np.full(len(x), Y))
-        lab = _space_forward(space, xyz)
-        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        d = _center_dists(space, xyz, metric)
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
@@ -382,10 +397,10 @@ def judge_regan_normal_ellipse(space, name="regan_1994_cvd_ellipses",
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 3b — g-tensor 3D color-matching ellipsoids (Brown 1957 family)
+#  JUDGE 3b - g-tensor 3D color-matching ellipsoids (Brown 1957 family)
 # ════════════════════════════════════════════════════════════════════════════
-def judge_jnd_ellipsoid_g(space, name, n_dir=26, row_filter=None):
-    """3-D color-matching ellipsoids in (x, y, l = 0.2·log10 Y) coordinates —
+def judge_jnd_ellipsoid_g(space, name, n_dir=26, row_filter=None, metric=None):
+    """3-D color-matching ellipsoids in (x, y, l = 0.2·log10 Y) coordinates -
     the Brown 1957 / Brown-MacAdam 1949 / Wyszecki-Fielder 1971 schema family.
 
     Each row gives the quadratic form g_ij of the matching ellipsoid:
@@ -446,24 +461,23 @@ def judge_jnd_ellipsoid_g(space, name, n_dir=26, row_filter=None):
         if np.any(ys < 1e-6):
             continue
         xyz = xyY_to_xyz(xs, ys, yrel)
-        lab = _space_forward(space, np.clip(xyz, 0, None))
-        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        d = _center_dists(space, np.clip(xyz, 0, None), metric)
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
             "mean_cv": float(np.mean(cvs)) if cvs else None}
 
 
-def judge_brown_1957(space, name="brown_1957_12obs_ellipsoids"):
+def judge_brown_1957(space, name="brown_1957_12obs_ellipsoids", metric=None):
     # weighted = inverse-variance observer average (the better estimator)
-    return judge_jnd_ellipsoid_g(space, name,
+    return judge_jnd_ellipsoid_g(space, name, metric=metric,
                                  row_filter=lambda r: r.get("averaging") == "weighted")
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 3c — CIELAB-space discrimination ellipsoids (Huang 2012)
+#  JUDGE 3c - CIELAB-space discrimination ellipsoids (Huang 2012)
 # ════════════════════════════════════════════════════════════════════════════
-def judge_lab_ellipsoid(space, name="huang_2012_cielab_ellipses", n_dir=26):
+def judge_lab_ellipsoid(space, name="huang_2012_cielab_ellipses", n_dir=26, metric=None):
     """Huang et al. 2012: threshold ellipsoids at 17 CIE centers, given as
     semi-axes A (major, in a*b* plane at theta_deg), B = A/A_over_B, and
     C_third_axis along ΔL*. Points on the ellipsoid are equally discriminable
@@ -503,8 +517,7 @@ def judge_lab_ellipsoid(space, name="huang_2012_cielab_ellipses", n_dir=26):
         delta = (u[:, 0:1] * A * e1 + u[:, 1:2] * B * e2 + u[:, 2:3] * C * e3)
         lab_pts = np.vstack([center, center + delta])
         xyz = lab_to_xyz(lab_pts, white)
-        lab2 = _space_forward(space, np.clip(xyz, 0, None))
-        d = np.sqrt(((lab2[1:] - lab2[0]) ** 2).sum(-1))
+        d = _center_dists(space, np.clip(xyz, 0, None), metric)
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
@@ -512,10 +525,10 @@ def judge_lab_ellipsoid(space, name="huang_2012_cielab_ellipses", n_dir=26):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 3d — suprathreshold tolerance vectors (RIT-DuPont, Berns 1991)
+#  JUDGE 3d - suprathreshold tolerance vectors (RIT-DuPont, Berns 1991)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_tolerance_vectors(space, name="berns_1991_rit_dupont_tolerance_vectors",
-                            min_vectors=4):
+                            min_vectors=4, metric=None):
     """RIT-DuPont T50 tolerance vectors: for each color center, several unit
     directions v with the distance T50 at which the difference is judged equal
     to the 1.0 ΔE*ab anchor. All endpoints center + T50·v are thus equally
@@ -559,8 +572,7 @@ def judge_tolerance_vectors(space, name="berns_1991_rit_dupont_tolerance_vectors
         center = pairs[0][0]
         pts = np.vstack([center] + [ep for _, ep in pairs])
         xyz = lab_to_xyz(pts, white)
-        lab2 = _space_forward(space, np.clip(xyz, 0, None))
-        d = np.sqrt(((lab2[1:] - lab2[0]) ** 2).sum(-1))
+        d = _center_dists(space, np.clip(xyz, 0, None), metric)
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
@@ -569,9 +581,9 @@ def judge_tolerance_vectors(space, name="berns_1991_rit_dupont_tolerance_vectors
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 3e — Hong 2025 dense JND field (fully colorimetric via OSF calibration)
+#  JUDGE 3e - Hong 2025 dense JND field (fully colorimetric via OSF calibration)
 # ════════════════════════════════════════════════════════════════════════════
-def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
+def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100, metric=None):
     """Hong et al. 2025 Wishart-Process JND ellipse field (the modern
     MacAdam-1942 successor: 8 observers × 103×103 grid).
 
@@ -623,8 +635,7 @@ def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
             continue
         xyz = np.clip(rgb, 0, 1) @ M2.T / white_abs[1]   # relative XYZ1931
         xyz = cat_to_d65(xyz, white_rel)
-        lab = _space_forward(space, xyz)
-        d = np.sqrt(((lab[1:] - lab[0]) ** 2).sum(-1))
+        d = _center_dists(space, xyz, metric)
         if d.mean() > 0:
             cvs.append(float(d.std() / d.mean()))
     return {"name": name, "n_centers": len(cvs),
@@ -633,7 +644,7 @@ def judge_hong_2dw(space, name="hong_2025_ellipsoids", n_phi=12, stride=100):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 3f — OSA-UCS uniform spacing (independent, non-Munsell spacing anchor)
+#  JUDGE 3f - OSA-UCS uniform spacing (independent, non-Munsell spacing anchor)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_osa_spacing(space, name="osa_ucs_1974", min_neighbours=3):
     """OSA-UCS committee atlas: 558 samples on a cuboctahedral lattice where
@@ -643,13 +654,13 @@ def judge_osa_spacing(space, name="osa_ucs_1974", min_neighbours=3):
     EQUAL distances; the coefficient of variation of those distances, averaged
     over samples, measures suprathreshold spacing anisotropy. Lower = better.
 
-    This is the principal spacing dataset INDEPENDENT of Munsell — the held-out
+    This is the principal spacing dataset INDEPENDENT of Munsell - the held-out
     anchor for spacing claims (the spacing-consensus ruler is 1/3 Munsell-fit)."""
     samples = _load_csv(name, "canonical.csv")
     pairs = _load_csv(name, "neighbor_pairs.csv")
     if samples is None or pairs is None:
         return {"name": name, "skipped": "canonical.csv / neighbor_pairs.csv missing"}
-    # xyY -> XYZ (already D65; coords are CIE 1964 10deg, fed directly — the
+    # xyY -> XYZ (already D65; coords are CIE 1964 10deg, fed directly - the
     # spacing CV is relative so the observer choice is immaterial)
     coord = {}
     for r in samples:
@@ -675,7 +686,7 @@ def judge_osa_spacing(space, name="osa_ucs_1974", min_neighbours=3):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 4a — unique hues (Xiao 2011): constant-hue test on unique-hue loci
+#  JUDGE 4a - unique hues (Xiao 2011): constant-hue test on unique-hue loci
 # ════════════════════════════════════════════════════════════════════════════
 def _load_csv(name, filename):
     p = _ds_path(name, filename)
@@ -688,7 +699,7 @@ def _load_csv(name, filename):
 def judge_unique_hues(space, name="xiao_unique_hues"):
     """Xiao et al. 2011: 185 observers set unique red/green/blue/yellow at 9
     lightness-chroma settings. All 9 settings of one unique hue are the SAME
-    perceived hue, so a good space maps them to a constant hue angle — the
+    perceived hue, so a good space maps them to a constant hue angle - the
     unique-hue version of the Hung-Berns constant-hue test.
 
     Pipeline: mean XYZ per (hue, level) over observers×sessions (the long
@@ -723,13 +734,13 @@ def judge_unique_hues(space, name="xiao_unique_hues"):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 4b — WCS naming (DIAGNOSTIC: naming is known to be space-insensitive)
+#  JUDGE 4b - WCS naming (DIAGNOSTIC: naming is known to be space-insensitive)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_wcs_naming(space, name="wcs", min_chips_per_term=3):
     """World Color Survey category compactness: per language, chips sharing
     the modal color term should sit closer together in a good space than
     chips with different terms. Score = mean(within-term pairwise distance) /
-    mean(between-term distance), averaged over 110 languages. DIAGNOSTIC —
+    mean(between-term distance), averaged over 110 languages. DIAGNOSTIC -
     project history shows naming is nearly space-insensitive (~88% for every
     space), so this stays out of the headline."""
     naming = _load_csv(name, "naming_long.csv")
@@ -787,7 +798,7 @@ def judge_wcs_naming(space, name="wcs", min_chips_per_term=3):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 4c — observer metamerism (DIAGNOSTIC: Asano CMFs × natural spectra)
+#  JUDGE 4c - observer metamerism (DIAGNOSTIC: Asano CMFs × natural spectra)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_observer_metamerism(space, name="asano_observers",
                               obs_dataset="151ind", n_stimuli=60):
@@ -795,7 +806,7 @@ def judge_observer_metamerism(space, name="asano_observers",
     natural-object reflectance under D65, compute XYZ with each of Asano's
     individual-observer CMFs, map through the space, and measure the spread
     (mean distance to the observer-mean) in gray-step units (CIELAB L*50→51
-    gray mapped through the space). DIAGNOSTIC — reports how LARGE observer
+    gray mapped through the space). DIAGNOSTIC - reports how LARGE observer
     disagreement looks in the space's own metric; no canonical better/worse
     direction, so it never enters the headline."""
     fund = _load_csv(name, "observer_fundamentals_long.csv")
@@ -868,11 +879,11 @@ def judge_observer_metamerism(space, name="asano_observers",
             "mean_spread_graysteps": float(np.mean(spread) / gray_step),
             "max_spread_graysteps": float(np.max(spread) / gray_step),
             "note": "observer disagreement in the space's own gray-step units "
-                    "(diagnostic — no canonical direction)"}
+                    "(diagnostic - no canonical direction)"}
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 5 — H-K brightness (mechanism diagnostic: does space-L boost with chroma?)
+#  JUDGE 5 - H-K brightness (mechanism diagnostic: does space-L boost with chroma?)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_hk(space, name="wyszecki_1967_osa_tiles", adapt_d65=True):
     """Heterochromatic (Helmholtz-Kohlrausch) brightness: a saturated color looks
@@ -918,14 +929,14 @@ def judge_hk(space, name="wyszecki_1967_osa_tiles", adapt_d65=True):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 5b — Fairchild-Pirrotta object-colour H-K (real surface-colour lightness)
+#  JUDGE 5b - Fairchild-Pirrotta object-colour H-K (real surface-colour lightness)
 # ════════════════════════════════════════════════════════════════════════════
 def judge_fp_lightness(space, name="fairchild_pirrotta_1991", adapt_d65=True):
     """Fairchild-Pirrotta 1991: 11 observers matched achromatic lightness to 36
     chromatic Munsell papers, giving each surface's H-K-corrected perceptual
     lightness (chromatic surfaces look LIGHTER than their L*, growing with
     chroma). This judge scores how well the candidate space's LIGHTNESS predicts
-    that observed lightness — scale-optimal STRESS, lower = better. Plain CIELab
+    that observed lightness - scale-optimal STRESS, lower = better. Plain CIELab
     L* sits at the no-H-K baseline (~11); a lightness that captures the
     chroma-dependent boost scores lower. The real OBJECT-colour counterpart to
     the aperture-colour H-K sets."""
@@ -953,13 +964,13 @@ def judge_fp_lightness(space, name="fairchild_pirrotta_1991", adapt_d65=True):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  JUDGE 6 — corresponding_colors → CAT prediction (Bradford) error
+#  JUDGE 6 - corresponding_colors → CAT prediction (Bradford) error
 # ════════════════════════════════════════════════════════════════════════════
 def judge_corresponding(space, name="breneman1987"):
     """Corresponding-colors: a stimulus under a test white matches a different
     stimulus under a reference white. Judges a chromatic-adaptation transform,
     not the space geometry. We report Bradford-CAT prediction error (ΔE in the
-    candidate space) — a property of the CAT, reported here for completeness so
+    candidate space) - a property of the CAT, reported here for completeness so
     the adaptation tier is grounded in real Breneman/Luo-Rhodes human matches."""
     rows = load_canonical(name)
     cols = rows[0].keys()
@@ -1013,7 +1024,7 @@ def _judge_constant_hue_xyY(space, name, rows, cols, hue_key, adapt_d65, c_floor
 
 
 # ════════════════════════════════════════════════════════════════════════════
-#  REGISTRY + PANEL — best-of-breed human judge per property
+#  REGISTRY + PANEL - best-of-breed human judge per property
 # ════════════════════════════════════════════════════════════════════════════
 # Each entry: dataset → (property, judge_fn, score_key, validated?). Only VALIDATED
 # judges (reproduce known rankings, sane numbers) are in the headline panel;
@@ -1022,7 +1033,7 @@ def _judge_constant_hue_xyY(space, name, rows, cols, hue_key, adapt_d65, c_floor
 REGISTRY = [
     # property        dataset                         judge                          key             validated
     ("difference",    "combvd",                       judge_pair_diff,               "stress",       True),
-    # helmlabfb: RANK-ONLY by project decision (2026-06 audit) — 5-level ordinal
+    # helmlabfb: RANK-ONLY by project decision (2026-06 audit) - 5-level ordinal
     # DV makes STRESS an artefact of the category→number mapping. Spearman ρ
     # only; lives under its own property so it never enters the headline total.
     ("difference_rank", "helmlabfb",                  judge_pair_diff,               "spearman_rho", True),
@@ -1037,14 +1048,14 @@ REGISTRY = [
     ("discrimination","alder1982",                    judge_jnd_ellipse,             "mean_cv",      True),
     ("discrimination","regan_1994_cvd_ellipses",       judge_regan_normal_ellipse,    "mean_cv",      True),
     ("3d_discrim",    "koenderink_2026_3d_metric_field", judge_jnd_ellipsoid_koenderink, "mean_cv", True),
-    # 2026-07-08 expansion — g-tensor 3D ellipsoid family + Lab ellipsoids +
+    # 2026-07-08 expansion - g-tensor 3D ellipsoid family + Lab ellipsoids +
     # tolerance vectors (validated: gray-ramp sanity + known-direction check)
     ("3d_discrim",    "brown_1957_12obs_ellipsoids",  judge_brown_1957,              "mean_cv",      True),
     ("3d_discrim",    "wyszecki_fielder_1971_ellipsoids", judge_jnd_ellipsoid_g,     "mean_cv",      True),
     ("3d_discrim",    "brown_macadam_1949_ellipsoids", judge_jnd_ellipsoid_g,        "mean_cv",      True),
     ("tolerance",     "huang_2012_cielab_ellipses",   judge_lab_ellipsoid,           "mean_cv",      True),
     ("tolerance",     "berns_1991_rit_dupont_tolerance_vectors", judge_tolerance_vectors, "mean_cv", True),
-    # 2026-07-08: promoted to validated — measured-primaries colorimetry from
+    # 2026-07-08: promoted to validated - measured-primaries colorimetry from
     # OSF k27js replaced the sRGB approximation (direction + range checks pass)
     ("discrimination","hong_2025_ellipsoids",         judge_hong_2dw,                "mean_cv",      True),
     # diagnostic / mechanism tier (geometric spaces are expected to score ~null)
@@ -1090,7 +1101,7 @@ def compare_on_pool(space_a, space_b, name_a="A", name_b="B", validated_only=Tru
     better, dataset by dataset. Returns a printable summary string."""
     ra = evaluate_space_on_pool(space_a, validated_only)["by_property"]
     rb = evaluate_space_on_pool(space_b, validated_only)["by_property"]
-    lines = [f"İNSAN-VERİSİ PANELİ — {name_a} vs {name_b} (best-of-breed, özellik bazlı)"]
+    lines = [f"İNSAN-VERİSİ PANELİ - {name_a} vs {name_b} (best-of-breed, özellik bazlı)"]
     win_a = win_b = 0
     # fit-data contamination: a judge whose dataset appears in a space's
     # trained_on declaration is in-sample for that space → out of TOPLAM
@@ -1115,12 +1126,12 @@ def compare_on_pool(space_a, space_b, name_a="A", name_b="B", validated_only=Tru
             if ds.lower() in fit_a or ds.lower() in fit_b:
                 who = name_a if ds.lower() in fit_a else name_b
                 lines.append(f"    {ds:34} {sa:8.3f} vs {sb:8.3f}  ⚠ IN-SAMPLE "
-                             f"({who} bu veriye fit) — TOPLAM dışı")
+                             f"({who} bu veriye fit) - TOPLAM dışı")
                 continue
             better = (sa < sb) if lower else (sa > sb)
             mark = name_a if better else name_b
             if prop in _LOWER_BETTER:
                 win_a += better; win_b += not better
             lines.append(f"    {ds:34} {sa:8.3f} vs {sb:8.3f}  → {mark}")
-    lines.append(f"\n  TOPLAM (validated tier): {name_a} {win_a} – {win_b} {name_b}")
+    lines.append(f"\n  TOPLAM (validated tier): {name_a} {win_a} - {win_b} {name_b}")
     return "\n".join(lines)

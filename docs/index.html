@@ -44,16 +44,15 @@
      · human data from
      <a href="https://github.com/Grkmyldz148/color-perception-datasets">color-perception-datasets</a>
      · <span id="gen"></span></p>
-  <p class="method"><b>Measurement</b> ranks on <b>difference prediction</b> -
-     STRESS (hover for CI95) on 5 independent sources (COMBVD's BFD-P / Leeds /
-     Witt / RIT-DuPont components + held-out MacAdam 1974), each entrant with its
-     own ΔE (metricspace = learned distance; CIEDE2000 / CIE94 = formulas; every
-     colour space = Euclidean ΔE), one equal vote per source so no single dataset
-     dominates. The <b>discrimination / 3-D / tolerance</b> columns are additional
-     measurement metrics (JND-ellipse roundness) shown for the spaces - difference
-     formulas are blank there, as they aren't spaces. <b>Overfit Δrank</b>
-     (metricspace only) = held-out rank - mean in-sample rank; on the held-out
-     MacAdam it does not win. <b>Generation</b> ranks on the properties that
+  <p class="method"><b>Measurement</b> ranks every entrant on its human-color-
+     <b>difference</b> accuracy, each with its OWN ΔE, one equal vote per dataset:
+     difference prediction = STRESS (hover for CI95) on 5 sources (COMBVD's BFD-P
+     / Leeds / Witt / RIT-DuPont + held-out MacAdam 1974); <b>discrimination /
+     3-D / tolerance</b> = JND-ellipse roundness. A pure distance model
+     (metricspace = learned distance, CIEDE2000 / CIE94 = formulas) is scored on
+     the same ellipses with its own distance, so it competes on those columns too
+     - not blank. <b>Overfit Δrank</b> (metricspace only) = held-out rank - mean
+     in-sample rank; on the held-out MacAdam it does not win. <b>Generation</b> ranks on the properties that
      actually decide synthesis quality: <b>hue-constancy</b> (Hung-Berns,
      Ebner-Fairchild, Munsell, Xiao - gradients keep their hue) and <b>even
      spacing</b> (OSA-UCS - no banding), one vote per dataset. Difference /

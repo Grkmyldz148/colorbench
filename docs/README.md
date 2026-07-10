@@ -30,8 +30,10 @@ with its own ΔE (metricspace = learned distance; CIEDE2000 / CIE94 = formulas;
 every colour-science space = Euclidean ΔE), **one equal vote per source**. Hover
 for **CI95**.
 
-Additional measurement columns (shown for the spaces; formulas show - as they
-aren't spaces): **discrimination** (MacAdam 42, Luo-Rigg, Alder, Regan, Hong),
+Additional measurement columns, each judged with the entrant's OWN ΔE - a pure
+distance model (metricspace / CIEDE2000 / CIE94) is scored on the same ellipses
+with its own distance, so it competes here too, not blank:
+**discrimination** (MacAdam 42, Luo-Rigg, Alder, Regan, Hong),
 **3-D discrimination** (Koenderink, Brown 57, Wyszecki-Fielder, Brown-MacAdam),
 **tolerance** (RIT-DuPont, Huang) - all JND-ellipse roundness. Plus greyed
 appearance **diagnostics** (H-K brightness/lightness, chromatic adaptation,
