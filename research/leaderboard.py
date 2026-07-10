@@ -330,14 +330,19 @@ def generation_board():
         v["scores"]["gen_spread"] = _swing(rank, all_keys, n)
     order = sorted(rows, key=lambda n: rows[n]["overall_rank"] or 999)
 
+    # Groups ordered by HUMAN relevance: the scored human categories first, then
+    # the diagnostic HUMAN judges (appearance → adaptation → inter-observer), so
+    # every human measurement sits together; the non-human columns (the derived
+    # rank-swing statistic and the physics robustness gate) go last.
     groups = [{"label": gl, "scored": True,
                "metrics": [{"key": k, "label": lb} for k, lb in ms]} for gl, ms in HUMAN]
-    groups.append({"label": "Generalization", "scored": True, "metrics": [
-        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 16 datasets"}]})
     # diagnostic human judges (real data, lightly validated) — shown, not scored
     for gl, propname, metrics in DIAG_HUMAN:
         groups.append({"label": gl, "scored": False,
                        "metrics": [{"key": k, "label": lb} for k, lb in metrics]})
+    # ── non-human tail ──
+    groups.append({"label": "Generalization", "scored": True, "metrics": [
+        {"key": "gen_spread", "label": "Rank swing", "hint": "worst−best rank over 16 datasets"}]})
     # physics-only robustness gate — NOT scored (no ruler, so no family bias);
     # flags spaces that lose invertibility or go non-finite at wide gamut
     groups.append({"label": "Robustness · physics (gate, not scored)", "scored": False, "metrics": [

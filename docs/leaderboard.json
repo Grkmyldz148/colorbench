@@ -1016,17 +1016,6 @@
           ]
         },
         {
-          "label": "Generalization",
-          "scored": true,
-          "metrics": [
-            {
-              "key": "gen_spread",
-              "label": "Rank swing",
-              "hint": "worst\u2212best rank over 16 datasets"
-            }
-          ]
-        },
-        {
           "label": "H-K brightness \u00b7 Spearman \u03c1, \u2191 better \u00b7 diagnostic",
           "scored": false,
           "metrics": [
@@ -1071,6 +1060,17 @@
             {
               "key": "asano_observers",
               "label": "Asano"
+            }
+          ]
+        },
+        {
+          "label": "Generalization",
+          "scored": true,
+          "metrics": [
+            {
+              "key": "gen_spread",
+              "label": "Rank swing",
+              "hint": "worst\u2212best rank over 16 datasets"
             }
           ]
         },
