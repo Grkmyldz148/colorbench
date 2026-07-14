@@ -1,5 +1,12 @@
 # ColorBench
 
+### 📊 [**Live leaderboard → grkmyldz148.github.io/colorbench**](https://grkmyldz148.github.io/colorbench/)
+
+Every invertible colour-science color space + helmlab, ranked on real
+psychophysical data across two boards (measurement ≠ generation).
+
+---
+
 A rigorous, GPU-accelerated benchmark for comparing perceptual color spaces — and
 for auditing *its own* fairness. ColorBench measures everything, hides nothing, and
 ships a tiered-verdict layer so a single win-count never misleads you.
